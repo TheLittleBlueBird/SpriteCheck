@@ -1,0 +1,16 @@
+/desktop/vendor/
+/dist/
+/QA/
+/Samples/
+/assets/skeleton-demo.png
+/tests/browser.mjs
+/desktop/package.mjs
+/desktop/make-sample.mjs
+/UserData/
+/TestUserData/
+/Updates/
+*.dat
+*.tmp
+*.log
+__pycache__/
+.DS_Store

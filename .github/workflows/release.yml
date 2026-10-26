@@ -1,0 +1,45 @@
+name: Build Windows release
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Validate release version
+        shell: pwsh
+        run: |
+          $v = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          if ($env:GITHUB_REF_TYPE -eq 'tag' -and $env:GITHUB_REF_NAME -ne "v$v") { throw 'Tag/package version mismatch' }
+      - run: npm test
+      - name: Restore verified WebView2 SDK
+        shell: pwsh
+        run: ./desktop/restore-sdk.ps1
+      - run: npm run build:windows
+      - run: python desktop/package.py
+      - name: Native updater validation
+        shell: pwsh
+        run: ./desktop/test-updater.ps1
+      - name: Upload build
+        uses: actions/upload-artifact@v4
+        with:
+          name: SpriteCheck-Windows
+          path: |
+            dist/*.zip
+            dist/*.sha256
+      - name: Publish release assets
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create $env:GITHUB_REF_NAME dist/*.zip dist/*.sha256 --verify-tag --generate-notes --latest

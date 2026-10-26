@@ -1,0 +1,42 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Sprite Check viewport drop verification</title>
+<style>body{margin:0;background:#101521;color:#d9ece3;font:12px Consolas,monospace}header{display:flex;gap:12px;align-items:center;padding:12px;border-bottom:1px solid #607b6c}button{background:#a5f1d0;color:#13261d;border:0;padding:9px;cursor:pointer}#dragDemo{background:#eec88c;cursor:grab}#status{margin-left:auto}iframe{width:100%;height:calc(100vh - 62px);border:0}#results{position:fixed;right:12px;top:61px;max-width:540px;background:#10291feb;padding:12px 20px;z-index:10;line-height:1.9;max-height:75vh;overflow:auto}#results:empty{display:none}</style>
+<header><button id="run">Run viewport drop tests</button><button id="dragDemo" draggable="true">Drag demo PNG into viewport</button><button id="hover">Show drop highlight</button><span id="status">Loading app…</span></header>
+<iframe id="app" src="../index.html" title="Sprite Check test workspace"></iframe><ol id="results"></ol>
+<script type="module">
+const frame=document.getElementById('app'),status=document.getElementById('status'),results=document.getElementById('results');
+const bytes=await (await fetch('../assets/test-sheet.png')).arrayBuffer();
+const wait=async test=>{const end=performance.now()+7000;while(!test()){if(performance.now()>end)throw Error('Timed out waiting for file import');await new Promise(r=>setTimeout(r,25));}};
+const ready=()=>frame.contentWindow?.spriteCheck?.project;
+await wait(()=>frame.contentWindow?.spriteCheck?.ready);const initial=new frame.contentWindow.DataTransfer();initial.items.add(new frame.contentWindow.File([bytes],'SkeletonSword-demo.png',{type:'image/png'}));frame.contentDocument.getElementById('fileInput').files=initial.files;frame.contentDocument.getElementById('fileInput').dispatchEvent(new frame.contentWindow.Event('change',{bubbles:true}));await wait(()=>ready()&&!frame.contentDocument.body.classList.contains('busy'));status.textContent='Ready';
+function transfer(files){const data=new frame.contentWindow.DataTransfer();for(const file of files)data.items.add(file);return data;}
+function file(name='viewport-drop-test.png'){return new frame.contentWindow.File([bytes],name,{type:'image/png'});}
+function dispatch(target,type,data){const event=new frame.contentWindow.DragEvent(type,{bubbles:true,cancelable:true,dataTransfer:data});target.dispatchEvent(event);return event;}
+const assert=(value,message)=>{if(!value)throw new Error(message);};
+function add(name){const li=document.createElement('li');li.textContent='PASS · '+name;results.append(li);}
+async function dropPNG(name,target){dispatch(target,'drop',transfer([file(name)]));await wait(()=>frame.contentDocument.getElementById('filename').textContent===name);}
+document.getElementById('dragDemo').addEventListener('dragstart',event=>{event.dataTransfer.items.add(new File([bytes],'native-viewport-drop.png',{type:'image/png'}));event.dataTransfer.effectAllowed='copy';});
+document.getElementById('hover').onclick=()=>{results.replaceChildren();dispatch(frame.contentDocument.getElementById('sheetCanvas'),'dragenter',transfer([file()]));status.textContent='Viewport highlight visible';};
+document.getElementById('run').onclick=async()=>{
+ results.replaceChildren();status.textContent='Running…';
+ try{
+ const w=frame.contentWindow,d=frame.contentDocument,canvas=d.getElementById('sheetCanvas'),zone=d.getElementById('sheetViewport'),editor=d.getElementById('sheetEditor');
+ dispatch(zone,'drop',transfer([file('reset-drop-test.png')]));await wait(()=>d.getElementById('filename').textContent==='reset-drop-test.png');
+ assert(d.getElementById('viewportImport'),'Missing viewport open button');add('Viewport has Open / Drop PNG affordance');
+ const drag=transfer([file()]);const over=dispatch(canvas,'dragover',drag);assert(over.defaultPrevented,'Drag must allow file drop');assert(editor.classList.contains('file-drop-active'),'Missing viewport highlight');add('File dragover highlights the viewport and allows a drop');
+ let documentDrops=0;const spy=()=>documentDrops++;d.addEventListener('drop',spy);
+ await dropPNG('viewport-drop-test.png',canvas);d.removeEventListener('drop',spy);assert(documentDrops===0,'Drop bubbled to page importer');assert(!editor.classList.contains('file-drop-active'),'Highlight stuck after drop');assert(d.getElementById('statFrames').textContent==='116','Wrong frame count');add('Drop on nested canvas opens one PNG exactly once, preserving 116 frames');
+ d.getElementById('holdPlus').click();const original=w.spriteCheck.project,edited=JSON.stringify(original.draft);
+ const unsupported=new w.File(['unsupported'],'wrong.jpg',{type:'image/jpeg'});dispatch(canvas,'drop',transfer([unsupported]));await new Promise(r=>setTimeout(r,30));assert(w.spriteCheck.project===original&&JSON.stringify(original.draft)===edited,'Invalid type replaced current work');add('Unsupported image leaves current edits intact');
+ dispatch(canvas,'drop',transfer([new w.File(['not a png'],'broken.png',{type:'image/png'})]));await wait(()=>!d.body.classList.contains('busy'));assert(w.spriteCheck.project===original&&JSON.stringify(original.draft)===edited,'Corrupt PNG replaced current work');add('Corrupt PNG leaves current edits intact');
+ const fallback=new w.Event('drop',{bubbles:true,cancelable:true});Object.defineProperty(fallback,'dataTransfer',{value:{types:['Files'],files:[],items:[{kind:'file',getAsFile:()=>file('items-only-drop.png')}]}});canvas.dispatchEvent(fallback);await wait(()=>d.getElementById('filename').textContent==='items-only-drop.png');add('File-item-only browser host payload also opens');
+ dispatch(canvas,'drop',transfer([unsupported,file('first-valid-png.png'),file('ignored-second.png')]));await wait(()=>d.getElementById('filename').textContent==='first-valid-png.png');add('Multiple files choose the first PNG');
+ dispatch(canvas,'dragenter',transfer([file()]));const leave=new w.Event('dragleave',{bubbles:true});Object.defineProperty(leave,'dataTransfer',{value:{types:[]}});canvas.dispatchEvent(leave);assert(!editor.classList.contains('file-drop-active'),'Cleared types left stuck highlight');add('Leaving viewport clears highlight even when host clears file types');
+ const internal=new w.DataTransfer();internal.setData('text/plain','keyframe');assert(!dispatch(canvas,'dragover',internal).defaultPrevented,'Internal frame drag intercepted');add('Internal timeline drags are not treated as imported files');
+ d.getElementById('confirm').click();d.getElementById('merge').click();await wait(()=>!d.getElementById('compareTab').disabled);d.getElementById('compareTab').click();await dropPNG('compare-viewport-drop.png',d.getElementById('compareOriginal'));assert(d.getElementById('sheetViewport').style.display==='block','New file did not return to source sheet');add('Compare viewport accepts a file and opens its new source sheet');
+ status.textContent='PASS 10 / 10';document.body.dataset.result='pass';
+ }catch(error){status.textContent='FAIL: '+error.message;document.body.dataset.result='fail';const li=document.createElement('li');li.textContent=status.textContent;results.append(li);}
+};
+setInterval(()=>{if(frame.contentDocument?.getElementById('filename')?.textContent==='native-viewport-drop.png')status.textContent='PASS · native pointer drag opened PNG';},200);
+</script>

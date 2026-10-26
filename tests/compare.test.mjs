@@ -1,0 +1,15 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {readFile} from 'node:fs/promises';
+import {Project,sliceSheet} from '../core.mjs';
+import {decodePNG,encodePNG} from '../png.mjs';
+import {comparisonMetrics,compareSettings} from '../compare-model.mjs';
+import {encodeProject,decodeProject} from '../project-file.mjs';
+const png=new Uint8Array(await readFile(new URL('../assets/test-sheet.png',import.meta.url))),image=await decodePNG(png);
+const fresh=()=>new Project(sliceSheet(image,{cellWidth:105,cellHeight:115}));
+test('all twelve imported animation rows default to loop, including Hit/Die/Attack',()=>{assert.ok(fresh().sheet.original.every(a=>a.loop===true));});
+test('comparison before merge shows source measurements and no invented output sizes',()=>{const p=fresh(),m=comparisonMetrics(p,png.length);assert.equal(m.original.pngBytes,png.length);assert.equal(m.original.playbackTicks,116);assert.equal(m.merged,null);assert.equal(m.areaReduction,null);assert.equal(m.fileReduction,null);});
+test('comparison uses actual PNG + exact JSON bytes and separates area from file savings',async()=>{const p=fresh();p.confirm();p.merge('row','test');const out=await encodePNG(p.merged),json=new TextEncoder().encode(JSON.stringify(p.merged.manifest,null,2));const m=comparisonMetrics(p,png.length,out.length,json.length);assert.equal(m.merged.totalBytes,out.length+json.length);assert.equal(m.merged.storedImages,107);assert.equal(m.merged.rows,12);assert.equal(m.merged.playbackTicks,116);assert.equal(m.merged.rgbaBytes,1260*1380*4);assert.ok(Math.abs(m.areaReduction-100/13)<1e-10);assert.equal(m.fileReduction,100*(1-(out.length+json.length)/png.length));});
+test('edits invalidate merged statistics while preserving original measurements',()=>{const p=fresh();p.confirm();p.merge('sheet','test');p.change(a=>a[0].keys[0].ticks=5);const m=comparisonMetrics(p,png.length);assert.equal(m.merged,null);assert.equal(m.original.playbackTicks,116);assert.equal(m.editedTicks,120);});
+test('DAT preserves Compare before merge and viewport controls; explicit non-loop persists',async()=>{const p=fresh();p.change(a=>a[4].loop=false);const compare={left:{mode:'sheet',zoom:2.5,x:18,y:-25},right:{mode:'animation',zoom:1,x:0,y:0},linked:false,split:65,log:true};const bytes=await encodeProject({project:p,pngBytes:png,sourceName:'demo.png',view:{row:4,tab:'compare',mode:'edited',compare}});const r=await decodeProject(bytes);assert.equal(r.project.merged,null);assert.equal(r.view.tab,'compare');assert.deepEqual(r.view.compare,compare);assert.equal(r.project.draft[4].loop,false);});
+test('viewport settings normalize unknown and out-of-range values safely',()=>{const c=compareSettings({left:{mode:'bad',zoom:Infinity,x:1e8},split:200});assert.equal(c.left.mode,'animation');assert.equal(c.left.zoom,1);assert.equal(c.left.x,100000);assert.equal(c.split,75);assert.equal(c.linked,true);});
