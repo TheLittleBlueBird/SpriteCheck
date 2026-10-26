@@ -1,4 +1,4 @@
-Sprite Check 1.6.0 - Windows x64 portable
+Sprite Check 1.6.1 - Windows x64 portable
 
 1. Extract the complete ZIP to a writable folder.
 2. Open Sprite Check.exe. No Node.js or local server is needed.

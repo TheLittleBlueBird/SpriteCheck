@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import {readFile} from 'node:fs/promises';
 import {APP_VERSION,REPOSITORY,releaseInfo,compareVersions,UpdateDialog} from '../update.mjs';
 const NEXT=APP_VERSION.split('.').map((v,i)=>i===2?Number(v)+1:v).join('.');
 const release=(version=NEXT)=>({tag_name:`v${version}`,published_at:'2026-10-26T00:00:00Z',draft:false,prerelease:false,body:'Fixes <script>remain plain text</script>',assets:[{name:`SpriteCheck-${version}-win-x64.zip`,state:'uploaded',size:123, browser_download_url:`https://github.com/${REPOSITORY}/releases/download/v${version}/SpriteCheck-${version}-win-x64.zip`}]});
@@ -34,4 +35,13 @@ test('Install captures project before request, pauses and locks closure during i
 test('Browser check never submits projects, closing ignores stale fetch and opens releases safely',async()=>{
  const h=harness(false);h.ui.open();h.ui.close();h.resolve(release());await new Promise(r=>setTimeout(r,0));assert.equal(h.e.updateInstall.hidden,true);
  h.ui.open();h.resolve(release());await new Promise(r=>setTimeout(r,0));await h.ui.install();assert.equal(h.saved,0);assert.equal(h.packets.length,0);assert.match(h.windows[0][0],new RegExp(`releases/tag/v${NEXT}$`));assert.equal(h.windows[0][2],'noopener,noreferrer');
+});
+test('Failed recovery snapshot prevents installation and leaves retry available',async()=>{
+ const h=harness();h.ui.open();h.ui.receive({kind:'update-state',requestId:h.ui.sequence,state:'available',version:NEXT});h.ui.saveSession=async()=>{throw Error('encoding failed');};await h.ui.install();
+ assert.equal(h.packets.filter(p=>p.kind==='update-install').length,0);assert.equal(h.e.updateClose.disabled,false);assert.match(h.e.updateStatus.textContent,/encoding failed/);
+});
+test('Release package, native client and update UI have the same version',async()=>{
+ const pkg=JSON.parse(await readFile(new URL('../package.json',import.meta.url),'utf8'));assert.equal(pkg.version,APP_VERSION);
+ const service=await readFile(new URL('../desktop/UpdateService.cs',import.meta.url),'utf8'),native=await readFile(new URL('../desktop/SpriteCheck.cs',import.meta.url),'utf8'),manifest=await readFile(new URL('../desktop/app.manifest',import.meta.url),'utf8');
+ assert.ok(service.includes(`const string Version = "${APP_VERSION}"`));assert.ok(native.includes(`AssemblyFileVersion("${APP_VERSION}.0")`));assert.ok(manifest.includes(`version="${APP_VERSION}.0"`));
 });

@@ -14,7 +14,7 @@ internal sealed class ReleaseCandidate {
 }
 
 internal static class UpdateService {
-    internal const string Version = "1.6.0";
+    internal const string Version = "1.6.1";
     internal const string Repository = "TheLittleBlueBird/SpriteCheck";
     internal const string Releases = "https://github.com/" + Repository + "/releases";
     internal const string Api = "https://api.github.com/repos/" + Repository + "/releases/latest";
@@ -75,6 +75,12 @@ internal static class UpdateService {
     }
 
     internal static string Hash(string path) { using (var sha = SHA256.Create()) using (var input = File.OpenRead(path)) return BitConverter.ToString(sha.ComputeHash(input)).Replace("-", "").ToLowerInvariant(); }
+
+    internal static void ValidateRecovery(byte[] bytes) {
+        byte[] magic = Encoding.ASCII.GetBytes("SPRITECHECK-DAT\0");
+        if (bytes == null || bytes.Length < 64) throw new IOException("Invalid recovery project.");
+        for (int i = 0; i < magic.Length; i++) if (bytes[i] != magic[i]) throw new IOException("Invalid recovery project.");
+    }
 
     internal static void Download(ReleaseCandidate release, string target, Action<int> progress) {
         if (release.Url != Releases + "/download/" + release.Tag + "/SpriteCheck-" + release.Version + "-win-x64.zip") throw new IOException("Untrusted update URL.");

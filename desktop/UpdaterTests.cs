@@ -50,6 +50,9 @@ internal static class UpdaterTests {
             asset["digest"]=null;Reject("Missing GitHub digest blocks installation",()=>UpdateService.ParseRelease(UpdateService.Json.Serialize(release)));asset["digest"]="sha256:"+new string('a',64);
             asset["browser_download_url"]="https://untrusted.example/update.zip";Reject("Untrusted download source rejected",()=>UpdateService.ParseRelease(UpdateService.Json.Serialize(release)));
             Pass("Numeric versions avoid lexical downgrade",UpdateService.ParseVersion("v1.10.0")>UpdateService.ParseVersion("1.9.9"));
+            var recovery=new byte[64];Encoding.ASCII.GetBytes("SPRITECHECK-DAT\0").CopyTo(recovery,0);UpdateService.ValidateRecovery(recovery);Pass("Valid 16-byte DAT signature accepted for recovery",true);
+            recovery[15]=1;Reject("Invalid DAT terminator rejected",()=>UpdateService.ValidateRecovery(recovery));
+            Reject("Truncated recovery rejected",()=>UpdateService.ValidateRecovery(new byte[16]));
             Console.WriteLine("PASS ALL " + checks + " native updater checks");
         } catch (Exception error) { Console.WriteLine("FAIL " + error); Environment.ExitCode=1; }
     }
