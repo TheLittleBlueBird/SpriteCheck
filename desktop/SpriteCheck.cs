@@ -12,8 +12,8 @@ using Microsoft.Web.WebView2.WinForms;
 
 [assembly: System.Reflection.AssemblyTitle("Sprite Check")]
 [assembly: System.Reflection.AssemblyProduct("Sprite Check")]
-[assembly: System.Reflection.AssemblyVersion("1.6.1.0")]
-[assembly: System.Reflection.AssemblyFileVersion("1.6.1.0")]
+[assembly: System.Reflection.AssemblyVersion("1.6.2.0")]
+[assembly: System.Reflection.AssemblyFileVersion("1.6.2.0")]
 
 internal static class Program {
     [STAThread]
@@ -43,7 +43,7 @@ internal sealed class SpriteCheckWindow : Form {
     public SpriteCheckWindow(string[] arguments) {
         args = arguments;
         selfTest = args.Contains("--self-test");
-        Text = "Sprite Check 1.6.1";
+        Text = "Sprite Check 1.6.2";
         BackColor = Color.FromArgb(11, 13, 23);
         StartPosition = FormStartPosition.CenterScreen;
         var available = Screen.PrimaryScreen.WorkingArea;
@@ -81,7 +81,7 @@ internal sealed class SpriteCheckWindow : Form {
             core.Settings.IsZoomControlEnabled = false;
             core.Settings.IsPasswordAutosaveEnabled = false;
             core.Settings.IsGeneralAutofillEnabled = false;
-            await core.AddScriptToExecuteOnDocumentCreatedAsync("window.spriteCheckDesktop = {version:'1.6.1'};");
+            await core.AddScriptToExecuteOnDocumentCreatedAsync("window.spriteCheckDesktop = {version:'1.6.2'};");
             core.NewWindowRequested += (sender, e) => { e.Handled = true; };
             core.PermissionRequested += (sender, e) => { e.State = CoreWebView2PermissionState.Deny; };
             core.NavigationStarting += (sender, e) => {
@@ -113,7 +113,7 @@ internal sealed class SpriteCheckWindow : Form {
                             string allowed = Path.GetFullPath(Path.Combine(root, "Updates")) + Path.DirectorySeparatorChar;
                             Guid id;
                             if (!job.StartsWith(allowed, StringComparison.OrdinalIgnoreCase) || !Guid.TryParseExact(Path.GetFileName(job), "N", out id)) throw new IOException("Invalid completed-update path.");
-                            string recoveryState = await core.ExecuteScriptAsync("({version:window.spriteCheckDesktop.version,hasProject:!!spriteCheck.project,draft:spriteCheck.project?.draft??null,dirty:spriteCheck.project?.dirty??false,mergedFrames:spriteCheck.project?.merged?.frames.length??null,compare:spriteCheck.compare,layout:spriteCheck.layout.preferences,time:spriteCheck.time})");
+                            string recoveryState = await core.ExecuteScriptAsync("({version:window.spriteCheckDesktop.version,hasProject:!!spriteCheck.project,draft:spriteCheck.project?.draft??null,dirty:spriteCheck.project?.dirty??false,mergedFrames:spriteCheck.project?.merged?.frames.length??null,compare:spriteCheck.compare,layout:spriteCheck.layout.preferences,time:spriteCheck.time,summary:document.getElementById('sheetSummary').textContent})");
                             using (var image = File.Create(Path.Combine(job, "updated-window.png"))) await core.CapturePreviewAsync(CoreWebView2CapturePreviewImageFormat.Png, image);
                             File.WriteAllText(Path.Combine(job, "ready"), recoveryState);
                         }
@@ -307,10 +307,10 @@ internal sealed class SpriteCheckWindow : Form {
     }
 
     private async Task RunSelfTest() {
-        testLog.WriteLine("Sprite Check 1.6.1 native WinForms/WebView2 runtime " + web.CoreWebView2.Environment.BrowserVersionString);
+        testLog.WriteLine("Sprite Check 1.6.2 native WinForms/WebView2 runtime " + web.CoreWebView2.Environment.BrowserVersionString);
         await web.CoreWebView2.ExecuteScriptAsync("document.getElementById('fileMenuButton').click();document.getElementById('menuUpdate').click()");
         for (int n = 0; n < 250 && await web.CoreWebView2.ExecuteScriptAsync("document.getElementById('updateStatus').dataset.state==='checking'") == "true"; n++) await Task.Delay(100);
-        await Check("File Update works in an empty scene and reports current published version", "document.getElementById('updateDialog').open && document.getElementById('updateCurrent').textContent==='1.6.1' && document.getElementById('updateLatest').textContent==='1.6.1' && document.getElementById('updateStatus').dataset.state==='current' && document.getElementById('updateInstall').hidden && spriteCheck.project===null");
+        await Check("File Update works in an empty scene and reports current published version", "document.getElementById('updateDialog').open && document.getElementById('updateCurrent').textContent==='1.6.2' && document.getElementById('updateLatest').textContent==='1.6.2' && document.getElementById('updateStatus').dataset.state==='current' && document.getElementById('updateInstall').hidden && spriteCheck.project===null");
         await Check("Native Update dialog text is at least 12px", "[...document.querySelectorAll('#updateDialog *')].filter(e=>e.getClientRects().length&&e.textContent.trim()).every(e=>parseFloat(getComputedStyle(e).fontSize)>=12)");
         using (var updateImage = File.Create(Path.Combine(testDirectory, "native-update-current.png"))) await web.CoreWebView2.CapturePreviewAsync(CoreWebView2CapturePreviewImageFormat.Png, updateImage);
         await web.CoreWebView2.ExecuteScriptAsync("document.getElementById('updateClose').click()");
@@ -389,7 +389,7 @@ internal sealed class SpriteCheckWindow : Form {
             if (await web.CoreWebView2.ExecuteScriptAsync("spriteCheck.project.merged!==null") == "true") break;
             await Task.Delay(100);
         }
-        await Check("Native saved .dat reopens exact hold, merged state and Compare", "spriteCheck.project.draft[0].keys[0].ticks===5 && spriteCheck.project.merged.frames.length===107 && !document.getElementById('compareViewport').hidden");
+        await Check("Native saved .dat reopens exact hold, merged state and Compare", "spriteCheck.project.draft[0].keys[0].ticks===5 && spriteCheck.project.merged.frames.length===107 && !document.getElementById('compareViewport').hidden && !document.getElementById('sheetSummary').textContent.startsWith('Open a')");
         await web.CoreWebView2.ExecuteScriptAsync("document.getElementById('export').click();document.getElementById('downloadBoth').click()");
         string png = Path.Combine(testDirectory, "test-sheet-merged.png"), manifest = Path.Combine(testDirectory, "test-sheet-merged.json");
         for (int n = 0; n < 100 && (!File.Exists(png) || !File.Exists(manifest)); n++) await Task.Delay(100);
