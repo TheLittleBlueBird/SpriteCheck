@@ -57,6 +57,3 @@ document.getElementById('pending').onclick=async()=>{await fresh();await importP
 document.getElementById('available').onclick=()=>send('available');document.getElementById('unlock').onclick=()=>send('error',{message:'QA current error'});
 document.getElementById('measure').onclick=async()=>{const packet=w.__packets.filter(p=>p.kind==='update-install').at(-1),r=packet?.session?await recover(packet):null;physical.textContent=JSON.stringify({ui:state(),modelFPS:app.project?.draft[0].fps,modelHold:app.project?.draft[0].keys[0]?.ticks,recoveryFPS:r?.project.draft[0].fps,recoveryHold:r?.project.draft[0].keys[0]?.ticks,sessionNull:packet?.session===null,packets:w.__packets.map(p=>({kind:p.kind,requestId:p.requestId,sessionBytes:p.session?.length}))},null,2);};
 </script>
-
-
-
