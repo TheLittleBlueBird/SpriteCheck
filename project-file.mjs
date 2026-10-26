@@ -27,7 +27,7 @@ function viewState(view={}){
 export async function encodeProject({project,pngBytes,sourceName,view={}}){
  const png=bytes(pngBytes);if(!png.length||png.length>MAX_PNG)throw new Error('Source PNG must be at most 64 MiB.');
  const draft=animations(project.sheet,project.draft),confirmed=project.confirmed?animations(project.sheet,project.confirmed):null;
- const metadata={format:'sprite-check-project',version:1,appVersion:'1.6.2',sourceName:String(sourceName||'sprite.png').slice(0,255),
+ const metadata={format:'sprite-check-project',version:1,appVersion:'1.6.3',sourceName:String(sourceName||'sprite.png').slice(0,255),
   grid:Object.fromEntries(['cellWidth','cellHeight','offsetX','offsetY','gapX','gapY'].map(k=>[k,project.sheet.grid[k]])),
   draft,confirmed,dirty:!!project.dirty,detected:!!project.detection,merged:!!project.merged,view:viewState(view)};
  const meta=encoder.encode(JSON.stringify(metadata));if(meta.length>MAX_META)throw new Error('Project timeline exceeds the .dat size limit.');

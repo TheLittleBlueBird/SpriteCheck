@@ -9,10 +9,10 @@ Repository: https://github.com/TheLittleBlueBird/SpriteCheck
 ## สำหรับเจ้าของโปรเจกต์
 
 1. แก้โค้ดและทดสอบใน branch ตามปกติ
-2. รัน `python desktop/bump-version.py 1.6.3` โดยเปลี่ยนเลขให้สูงกว่ารุ่นปัจจุบัน สคริปต์เตรียมเลขรุ่นให้ตรงกันทั้ง UI/EXE/manifest เท่านั้น
+2. รัน `python desktop/bump-version.py 1.6.4` โดยเปลี่ยนเลขให้สูงกว่ารุ่นปัจจุบัน สคริปต์เตรียมเลขรุ่นให้ตรงกันทั้ง UI/EXE/manifest เท่านั้น
 3. รัน `npm test` และ build/test บน Windows ตาม README ตรวจ native UI ก่อนเผยแพร่
 4. ตรวจไฟล์ที่จะ commit แล้ว commit ลง GitHub; ไม่ใส่ภาพ Artist, `.dat`, `UserData`, SDK cache หรือบันทึก QA ภายใน
-5. สร้าง tag ให้ตรงกับ package version แล้ว push เช่น `git tag v1.6.3` และ `git push origin main v1.6.3`
+5. สร้าง tag ให้ตรงกับ package version แล้ว push เช่น `git tag v1.6.4` และ `git push origin main v1.6.4`
 6. GitHub Actions จะทดสอบและ build ZIP + SHA-256 แล้วสร้าง GitHub Release เมื่อผ่าน ตรวจหน้า Actions/Release ว่าสำเร็จ ผู้ใช้จึงจะเห็นรุ่นใหม่ใน File → Update
 
 ใช้ Release แบบ stable และชื่อ asset `SpriteCheck-<version>-win-x64.zip` ตามสคริปต์ ห้ามเปลี่ยนไฟล์ของ Release เดิม ใช้เลขรุ่นใหม่ทุกครั้ง GitHub API ต้องส่ง `digest: sha256:...` ของ asset มิฉะนั้นแอปจะปฏิเสธการติดตั้ง

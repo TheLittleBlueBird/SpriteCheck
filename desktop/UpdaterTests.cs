@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.IO.Compression;
+using System.Diagnostics;
 using System.Linq;
 using System.Text;
 
@@ -53,6 +54,13 @@ internal static class UpdaterTests {
             var recovery=new byte[64];Encoding.ASCII.GetBytes("SPRITECHECK-DAT\0").CopyTo(recovery,0);UpdateService.ValidateRecovery(recovery);Pass("Valid 16-byte DAT signature accepted for recovery",true);
             recovery[15]=1;Reject("Invalid DAT terminator rejected",()=>UpdateService.ValidateRecovery(recovery));
             Reject("Truncated recovery rejected",()=>UpdateService.ValidateRecovery(new byte[16]));
+            var recoveryPlan=Plan("recovery-start");recoveryPlan.Session=Path.Combine(recoveryPlan.Job,"resume.dat");
+            var start=UpdateRecovery.StartInfo(recoveryPlan);
+            Pass("Recovery reopens the exact original EXE and saved DAT without a shell",start.FileName==Path.Combine(recoveryPlan.Root,"Sprite Check.exe")&&!start.UseShellExecute&&start.WorkingDirectory==recoveryPlan.Root&&start.Arguments.Contains("--update-complete")&&start.Arguments.Contains("\""+recoveryPlan.Session+"\""));
+            recoveryPlan.Session=null;Pass("Empty-scene recovery has no DAT argument",!UpdateRecovery.StartInfo(recoveryPlan).Arguments.Contains(".dat"));
+            recoveryPlan.ProcessId=2147483647;Pass("Exited original process permits recovery",!UpdateRecovery.OriginalIsRunning(recoveryPlan));
+            using(var current=Process.GetCurrentProcess()){recoveryPlan.ProcessId=current.Id;recoveryPlan.ProcessStart=current.StartTime.ToUniversalTime().Ticks;Pass("Running original process prevents duplicate recovery",UpdateRecovery.OriginalIsRunning(recoveryPlan));recoveryPlan.ProcessStart=0;Pass("Reused PID is not mistaken for the original process",!UpdateRecovery.OriginalIsRunning(recoveryPlan));}
+            bool incomplete=false;try{UpdaterEngine.Restore(Plan("incomplete-rollback"),new[]{"app/app.mjs"},new HashSet<string>{"app/app.mjs"});}catch(UpdateRollbackException){incomplete=true;}Pass("Incomplete rollback has a distinct unsafe-to-restart result",incomplete);
             Console.WriteLine("PASS ALL " + checks + " native updater checks");
         } catch (Exception error) { Console.WriteLine("FAIL " + error); Environment.ExitCode=1; }
     }

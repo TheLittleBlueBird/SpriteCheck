@@ -20,6 +20,26 @@ internal sealed class UpdatePlan {
     public long ProcessStart { get; set; }
 }
 
+internal sealed class UpdateRollbackException : IOException {
+    internal UpdateRollbackException(string message) : base(message) { }
+}
+
+internal static class UpdateRecovery {
+    internal static bool OriginalIsRunning(UpdatePlan plan) {
+        try {
+            using (var original = Process.GetProcessById(plan.ProcessId))
+                return original.StartTime.ToUniversalTime().Ticks == plan.ProcessStart && !original.WaitForExit(2000);
+        } catch (ArgumentException) { return false; }
+    }
+    internal static ProcessStartInfo StartInfo(UpdatePlan plan) {
+        // Both normal updates and safe recovery get a local startup acknowledgement.
+        return new ProcessStartInfo(Path.Combine(plan.Root, "Sprite Check.exe")) {
+            WorkingDirectory = plan.Root, UseShellExecute = false,
+            Arguments = "--update-complete \"" + plan.Job + "\"" + (plan.Session == null ? "" : " \"" + plan.Session + "\"")
+        };
+    }
+}
+
 internal static class UpdaterEngine {
     internal static string Child(string root, string relative) {
         if (string.IsNullOrEmpty(relative) || relative.Any(c => c < 32 || "\\:<>\"|?*".Contains(c)) || relative.StartsWith("/") || relative.Split('/').Any(x => x == "" || x == "." || x == ".." || x.EndsWith(".") || x.EndsWith(" ") || Regex.IsMatch(x, @"^(CON|PRN|AUX|NUL|COM[0-9]|LPT[0-9])(\.|$)", RegexOptions.IgnoreCase))) throw new IOException("Invalid package path: " + relative);
@@ -96,14 +116,14 @@ internal static class UpdaterEngine {
                 else if (File.Exists(target)) File.Delete(target);
             } catch (Exception error) { failures.Add(name + ": " + error.Message); }
         }
-        if (failures.Count != 0) throw new IOException("Rollback incomplete. Backups are preserved in " + plan.Job + "\n" + string.Join("\n", failures));
+        if (failures.Count != 0) throw new UpdateRollbackException("Rollback incomplete. Backups are preserved in " + plan.Job + "\n" + string.Join("\n", failures));
     }
 }
 
 internal static class UpdateProgram {
     [STAThread]
     private static void Main(string[] args) {
-        UpdatePlan plan = null; List<string> files = null; bool applied = false; StreamWriter log = null;
+        UpdatePlan plan = null; List<string> files = null; bool applied = false, validatedPlan = false; StreamWriter log = null;
         try {
             if (args.Length != 1) throw new IOException("Start updates from Sprite Check: File > Update.");
             string planPath = Path.GetFullPath(args[0]);
@@ -113,6 +133,7 @@ internal static class UpdateProgram {
             Guid jobId;
             if (!Guid.TryParseExact(Path.GetFileName(plan.Job), "N", out jobId) || !plan.Job.Equals(expectedJob, StringComparison.OrdinalIgnoreCase) || !planPath.Equals(Path.Combine(plan.Job, "plan.json"), StringComparison.OrdinalIgnoreCase) || !AppDomain.CurrentDomain.BaseDirectory.TrimEnd('\\').Equals(plan.Job, StringComparison.OrdinalIgnoreCase) || !plan.Package.Equals(Path.Combine(plan.Job, "package.zip"), StringComparison.OrdinalIgnoreCase) || (plan.Session != null && !plan.Session.Equals(Path.Combine(plan.Job, "resume.dat"), StringComparison.OrdinalIgnoreCase))) throw new IOException("Invalid update plan location.");
             UpdateService.ParseVersion(plan.Version);
+            validatedPlan = true;
             log = new StreamWriter(Path.Combine(plan.Job, "update.log"), true) { AutoFlush = true };
             files = UpdaterEngine.Stage(plan); log.WriteLine("PASS Package, paths, identity and file hashes verified");
             try {
@@ -127,8 +148,7 @@ internal static class UpdateProgram {
                 if (File.Exists(target)) using (File.Open(target, FileMode.Open, FileAccess.ReadWrite, FileShare.None)) { }
             }
             UpdaterEngine.Apply(plan, files); applied = true; log.WriteLine("PASS Files installed; original files backed up");
-            var start = new ProcessStartInfo(Path.Combine(plan.Root, "Sprite Check.exe")) { WorkingDirectory = plan.Root, UseShellExecute = false };
-            start.Arguments = "--update-complete \"" + plan.Job + "\"" + (plan.Session == null ? "" : " \"" + plan.Session + "\"");
+            var start = UpdateRecovery.StartInfo(plan);
             using (var next = Process.Start(start)) {
                 bool healthy = false;
                 for (int n = 0; n < 300; n++) { if (File.Exists(Path.Combine(plan.Job, "ready"))) { healthy = true; break; } if (next.HasExited) break; Thread.Sleep(200); }
@@ -140,12 +160,20 @@ internal static class UpdateProgram {
             log.WriteLine("PASS Update complete; new program is ready" );
         } catch (Exception error) {
             if (log != null) log.WriteLine("FAIL " + error);
+            bool canReopen = validatedPlan && plan != null && !(error is UpdateRollbackException);
             if (applied && plan != null) {
                 try {
                     var existed = new HashSet<string>(UpdateService.Json.Deserialize<string[]>(File.ReadAllText(Path.Combine(plan.Job, "backup-index.json"))), StringComparer.OrdinalIgnoreCase);
                     UpdaterEngine.Restore(plan, files, existed); if (log != null) log.WriteLine("PASS Original version restored");
-                    Process.Start(new ProcessStartInfo(Path.Combine(plan.Root, "Sprite Check.exe"), plan.Session == null ? "" : "\"" + plan.Session + "\"") { WorkingDirectory = plan.Root });
-                } catch (Exception rollback) { error = new IOException(error.Message + "\nRollback: " + rollback.Message); }
+                } catch (Exception rollback) { canReopen = false; error = new IOException(error.Message + "\nRollback: " + rollback.Message); }
+            }
+            if (canReopen) {
+                try {
+                    if (!UpdateRecovery.OriginalIsRunning(plan)) {
+                        Process.Start(UpdateRecovery.StartInfo(plan));
+                        if (log != null) log.WriteLine("PASS Original version reopened with recovery project");
+                    } else if (log != null) log.WriteLine("PASS Original process is still running; no duplicate recovery window");
+                } catch (Exception restart) { error = new IOException(error.Message + "\nRecovery: " + restart.Message); }
             }
             MessageBox.Show("Update stopped: " + error.Message + (plan == null ? "" : "\n\nBackup/session/log: " + plan.Job), "Sprite Check Update", MessageBoxButtons.OK, MessageBoxIcon.Error);
             Environment.ExitCode = 1;

@@ -1,4 +1,4 @@
-export const APP_VERSION='1.6.2';
+export const APP_VERSION='1.6.3';
 export const REPOSITORY='TheLittleBlueBird/SpriteCheck';
 export const RELEASES_URL=`https://github.com/${REPOSITORY}/releases`;
 export const API_URL=`https://api.github.com/repos/${REPOSITORY}/releases/latest`;
@@ -42,12 +42,12 @@ export class UpdateDialog{
   try{const info=await this.fetchRelease();if(requestId===this.sequence)this.state(releaseInfo(info));}
   catch(error){if(requestId===this.sequence)this.state({state:'error',message:error.message});}
  }
- receive(packet){if(packet.kind==='update-state'&&(packet.requestId===this.sequence||this.locked))this.state(packet);}
+ receive(packet){if(packet.kind==='update-state'&&packet.requestId===this.sequence)this.state(packet);}
  async install(){
   if(this.info?.state!=='available'||this.locked)return;
   if(!this.desktop){this.d.defaultView.open(this.info.url,'_blank','noopener,noreferrer');return;}
-  const version=this.info.version;this.state({state:'saving',version});this.pause();
-  try{const session=await this.saveSession();this.post({kind:'update-install',requestId:this.sequence,session});this.state({state:'downloading',version});}
-  catch(error){this.state({state:'error',message:`เก็บงานไม่สำเร็จ จึงยังไม่อัปเดต: ${error.message}`});}
+  const version=this.info.version,requestId=++this.sequence;this.state({state:'saving',version});this.pause();
+  try{const session=await this.saveSession();if(requestId!==this.sequence||this.info.state!=='saving')return;this.post({kind:'update-install',requestId,session});this.state({state:'downloading',version});}
+  catch(error){if(requestId===this.sequence)this.state({state:'error',message:`เก็บงานไม่สำเร็จ จึงยังไม่อัปเดต: ${error.message}`});}
  }
 }

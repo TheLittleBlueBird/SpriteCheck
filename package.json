@@ -1,11 +1,11 @@
 {
   "name": "sprite-check",
-  "version": "1.6.2",
+  "version": "1.6.3",
   "private": true,
   "type": "module",
   "scripts": {
     "start": "node server.mjs",
-    "test": "node --test tests/core.test.mjs tests/file-drop.test.mjs tests/project-file.test.mjs tests/compare.test.mjs tests/shortcuts.test.mjs tests/dewey-qa.test.mjs tests/compare-regression.test.mjs tests/layout.test.mjs tests/dewey-layout.test.mjs tests/file-menu.test.mjs tests/update.test.mjs",
+    "test": "node --test tests/core.test.mjs tests/file-drop.test.mjs tests/project-file.test.mjs tests/compare.test.mjs tests/shortcuts.test.mjs tests/dewey-qa.test.mjs tests/compare-regression.test.mjs tests/layout.test.mjs tests/dewey-layout.test.mjs tests/file-menu.test.mjs tests/update.test.mjs tests/dewey-update.test.mjs",
     "build:windows": "powershell -NoProfile -ExecutionPolicy Bypass -File desktop/build.ps1"
   }
 }
