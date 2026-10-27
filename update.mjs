@@ -1,4 +1,4 @@
-export const APP_VERSION='1.7.0';
+export const APP_VERSION='1.7.1';
 export const REPOSITORY='TheLittleBlueBird/SpriteCheck';
 export const RELEASES_URL=`https://github.com/${REPOSITORY}/releases`;
 export const API_URL=`https://api.github.com/repos/${REPOSITORY}/releases/latest`;

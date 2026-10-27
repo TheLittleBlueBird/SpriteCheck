@@ -1,7 +1,15 @@
 import {paintLine,floodFill,samplePixel,sourceColors} from './pixel-tools.mjs';
 
 const toolNames={pencil:'PENCIL',eraser:'ERASER',eyedropper:'PICK COLOR',fill:'FILL',line:'LINE',hand:'PAN'};
-const shortcuts={KeyB:'pencil',KeyE:'eraser',KeyI:'eyedropper',KeyG:'fill',KeyL:'line',KeyH:'hand'};
+const shortcuts={KeyB:'pencil',KeyE:'eraser',KeyG:'fill',KeyL:'line',KeyH:'hand'};
+const toolIcons={
+ pencil:'<path d="m4 15 11-11 5 5L9 20H4v-5Zm9-9 5 5M4 15l5 5"/>',
+ eraser:'<path d="m3 14 10-11 8 8-9 10H9l-6-6v-1Zm5-5 8 8M12 21h9"/>',
+ eyedropper:'<path d="m14 4 2-2 6 6-2 2-2-2-9 9-5 1 1-5 9-9Zm-2 2 6 6M4 18l-2 2"/>',
+ fill:'<path d="m9 3 10 10-8 8L1 11l8-8Zm-7 8h15M7 1l6 6M20 14s-3 4-3 5a3 3 0 0 0 6 0c0-1-3-5-3-5Z"/>',
+ line:'<path d="M5 19 19 5"/><rect x="2" y="16" width="5" height="5"/><rect x="17" y="2" width="5" height="5"/>',
+ hand:'<path d="M8 12V5a2 2 0 0 1 4 0v6-8a2 2 0 0 1 4 0v8-5a2 2 0 0 1 4 0v9l-3 7H8l-6-8a2 2 0 0 1 3-2l3 3v-3Z"/>'
+};
 const hex=color=>'#'+color.map(n=>n.toString(16).padStart(2,'0')).join('').toUpperCase();
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 
@@ -12,7 +20,7 @@ export class PaintEditor {
   this.project=null;this.sourceId=null;this.tool='pencil';this.color=[165,241,208,255];this.size=1;
   this.zoom=1;this.pan={x:0,y:0};this.stroke=null;this.drag=null;this.hover=null;this.space=false;this.paletteSource=null;
   root.innerHTML=`<div class="paint-toolbar" role="toolbar" aria-label="Pixel painting tools">
-   <div class="paint-tools">${[['pencil','B'],['eraser','E'],['eyedropper','I'],['fill','G'],['line','L'],['hand','H']].map(([id,key])=>`<button id="paintTool-${id}" data-tool="${id}" title="${toolNames[id]} (${key})" aria-pressed="${id==='pencil'}">${toolNames[id]} <kbd>${key}</kbd></button>`).join('')}</div>
+   <div class="paint-tools">${[['pencil','B'],['eraser','E'],['eyedropper','Alt + left click'],['fill','G'],['line','L'],['hand','H']].map(([id,key])=>`<button id="paintTool-${id}" data-tool="${id}" aria-label="${toolNames[id]}" title="${toolNames[id]} · ${key}" aria-pressed="${id==='pencil'}"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${toolIcons[id]}</svg>${id==='eyedropper'?'':`<kbd>${key}</kbd>`}</button>`).join('')}</div>
    <label>SIZE <input id="paintSize" type="number" min="1" max="16" value="1" aria-label="Square brush size in pixels"></label>
    <label class="paint-color-field">COLOR <input id="paintColor" type="color" value="#a5f1d0" aria-label="Paint color"></label>
    <label>A <input id="paintAlpha" type="number" min="0" max="255" value="255" aria-label="Paint color alpha"></label>
@@ -21,7 +29,7 @@ export class PaintEditor {
   <div class="paint-framebar"><button id="paintPrevious" aria-label="Previous source frame">‹</button><select id="paintFrameSelect" aria-label="Frame to paint"></select><button id="paintNext" aria-label="Next source frame">›</button>
    <div class="paint-zoom-tools"><button id="paintZoomOut" aria-label="Zoom paint out">−</button><span id="paintZoomLabel">100%</span><button id="paintZoomIn" aria-label="Zoom paint in">＋</button><button id="paintFit">FIT</button><button id="paintActual">1:1</button></div>
   </div>
-  <div class="paint-main"><div id="paintStage" class="paint-stage checker"><canvas id="paintCanvas" tabindex="0" aria-label="Pixel editor canvas: drag to paint; right click erases; Alt picks color; Space and drag pans"></canvas></div>
+  <div class="paint-main"><div id="paintStage" class="paint-stage checker"><canvas id="paintCanvas" tabindex="0" aria-label="Pixel editor canvas: drag to paint; right click erases; Alt and left click picks color; Space and drag pans"></canvas></div>
    <aside class="paint-sidebar"><strong id="paintFrameTitle">SELECT A FRAME</strong><span id="paintFrameInfo">Open a PNG to start.</span>
     <button id="paintExport" class="action primary" title="ส่งออกภาพทั้ง Sheet ที่แก้แล้ว โดยไม่ต้อง Merge">SAVE EDITED PNG ↓</button>
     <label><input id="paintGrid" type="checkbox" checked> PIXEL GRID</label><label><input id="paintOriginal" type="checkbox"> ORIGINAL · READ ONLY</label>
@@ -29,7 +37,7 @@ export class PaintEditor {
     <button id="paintResetFrame" title="คืนพิกเซลของเฟรมนี้เป็นต้นฉบับ · Undo ได้">RESET FRAME</button><button id="paintUndo">↶ UNDO</button><button id="paintRedo">↷ REDO</button>
     <p>แก้เฉพาะภาพเฟรมที่เลือก ทุกคีย์ที่อ้างภาพนี้จะเปลี่ยนตาม<br>ภาพซ้ำคนละช่องยังแยกกัน</p>
    </aside></div>
-  <div class="paint-status"><span id="paintCoordinate">—</span><span id="paintHint">B Pencil · E Eraser · I Pick · G Fill · L Line · H Pan</span></div>`;
+  <div class="paint-status"><span id="paintCoordinate">—</span><span id="paintHint">B Pencil · E Eraser · Alt + left click Pick · G Fill · L Line · H Pan</span></div>`;
   const $=id=>root.querySelector('#'+id);this.$=$;this.canvas=$('paintCanvas');this.stage=$('paintStage');
   for(const b of root.querySelectorAll('[data-tool]'))b.onclick=()=>this.setTool(b.dataset.tool);
   $('paintSize').onchange=()=>{const n=$('paintSize').valueAsNumber;if(Number.isInteger(n)&&n>=1&&n<=16)this.size=n;$('paintSize').value=this.size;this.draw();};
@@ -84,9 +92,10 @@ export class PaintEditor {
  down(e){
   if(!this.frame||![0,1,2].includes(e.button)||this.stroke||this.drag||document.body.classList.contains('busy'))return;
   e.preventDefault();this.canvas.focus({preventScroll:true});this.onBegin();const p=this.position(e),g=this.geometry;
-  if(e.button===1||this.tool==='hand'||this.space){this.drag={pointer:e.pointerId,x:e.clientX,y:e.clientY};this.capture(e);this.canvas.style.cursor='grabbing';return;}
   const readOnly=this.$('paintOriginal').checked;
-  if(e.altKey||this.tool==='eyedropper'){const data=readOnly?this.project.originalSheet.frames[this.sourceId].data:this.frame.data,c=samplePixel(data,g.width,g.height,p.x,p.y);if(c)this.setColor(c);this.hover=p;this.draw();return;}
+  // Temporary picker takes priority over Hand/Space without changing the active tool.
+  if(e.button===0&&(e.altKey||(this.tool==='eyedropper'&&!this.space))){const data=readOnly?this.project.originalSheet.frames[this.sourceId].data:this.frame.data,c=samplePixel(data,g.width,g.height,p.x,p.y);if(c)this.setColor(c);this.hover=p;this.draw();return;}
+  if(e.button===1||this.tool==='hand'||this.space){this.drag={pointer:e.pointerId,x:e.clientX,y:e.clientY};this.capture(e);this.canvas.style.cursor='grabbing';return;}
   if(readOnly){this.onMessage('ปิด ORIGINAL · READ ONLY ก่อนวาด',false);return;}
   if(!samplePixel(this.frame.data,g.width,g.height,p.x,p.y))return;
   const color=e.button===2||this.tool==='eraser'?[0,0,0,0]:this.color.slice();
@@ -117,7 +126,7 @@ export class PaintEditor {
   if((e.ctrlKey||e.metaKey)&&e.code==='KeyZ'){e.preventDefault();e.stopPropagation();this.onHistory(e.shiftKey?'redo':'undo');return true;}
   if((e.ctrlKey||e.metaKey)&&e.code==='KeyY'){e.preventDefault();e.stopPropagation();this.onHistory('redo');return true;}
   if(e.ctrlKey||e.metaKey)return false;
-  if(shortcuts[e.code]&&!e.shiftKey){e.preventDefault();e.stopPropagation();this.setTool(shortcuts[e.code]);return true;}
+  if(shortcuts[e.code]&&!e.shiftKey&&!e.altKey){e.preventDefault();e.stopPropagation();this.setTool(shortcuts[e.code]);return true;}
   if(e.target===this.canvas){
    if(e.code==='Space'){e.preventDefault();e.stopPropagation();this.space=true;return true;}
    if(e.code==='BracketLeft'||e.code==='BracketRight'){e.preventDefault();this.size=clamp(this.size+(e.code==='BracketLeft'?-1:1),1,16);this.$('paintSize').value=this.size;this.draw();return true;}
@@ -140,7 +149,7 @@ export class PaintEditor {
   const p=this.hover,col=p?samplePixel(data,g.width,g.height,p.x,p.y):null;
   this.$('paintCoordinate').textContent=col?`X ${p.x} · Y ${p.y} · ${hex(col)}`:`${g.width} × ${g.height} px`;
   this.$('paintZoomLabel').textContent=`${Math.round(g.scale*100)}%`;
-  this.$('paintHint').textContent=readOnly?'ORIGINAL · ปิดช่องนี้เพื่อกลับมาแก้ภาพ':`${toolNames[this.tool]} · 1 stroke = 1 Undo · Right-click erase · Alt pick · Space+drag pan`;
+  this.$('paintHint').textContent=readOnly?'ORIGINAL · READ ONLY · Alt + left click: pick original color':`${toolNames[this.tool]} · Alt + left click: pick color · Right-click: erase · Space+drag: pan`;
   if(col&&this.tool!=='hand'&&!readOnly){ctx.strokeStyle='#ffffff';ctx.lineWidth=1;const n=['eyedropper','fill'].includes(this.tool)?1:this.size;ctx.strokeRect(g.x+(p.x-Math.floor(n/2))*g.scale+.5,g.y+(p.y-Math.floor(n/2))*g.scale+.5,n*g.scale-1,n*g.scale-1);}
  }
 }

@@ -1,0 +1,12 @@
+/* Every transparent viewing surface shares this preference. Image buffers stay RGBA. */
+:root[data-canvas-background="solid"] .checker{background-color:var(--canvas-background-color);background-image:none}
+:root[data-canvas-background="solid"] .key canvas{background-color:var(--canvas-background-color)}
+.canvas-background-controls{display:flex;align-items:center;gap:6px;margin-left:auto;min-width:0;font-size:12px}
+.canvas-background-controls label{font-size:12px;color:var(--muted)}
+.canvas-background-controls select{width:146px;min-width:0;height:26px;font-size:12px;padding:2px 5px}
+.canvas-background-controls input[type="color"]{width:30px;min-width:30px;height:26px;padding:2px;border:1px solid var(--line);background:#151b29;cursor:pointer}
+.background-presets{display:flex;gap:4px}.background-presets button{width:24px;height:24px;min-height:24px;padding:3px;border:1px solid #65718b;background:#151b29}
+.background-presets button:before{content:'';display:block;width:100%;height:100%;background:var(--swatch)}
+.background-presets button[aria-pressed="true"]{border-color:var(--mint);outline:1px solid var(--mint)}
+@media(max-width:980px){.canvas-background-controls label{display:none}.canvas-background-controls select{width:126px}.background-presets{display:none}}
+@media(max-width:560px){.menubar{flex-wrap:wrap;padding:3px 0;gap:3px}.topbar{grid-template-rows:auto auto auto}.canvas-background-controls{flex-basis:100%;justify-content:flex-end}.canvas-background-controls label{display:inline}}
