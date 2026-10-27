@@ -14,7 +14,7 @@ internal sealed class ReleaseCandidate {
 }
 
 internal static class UpdateService {
-    internal const string Version = "1.6.3";
+    internal const string Version = "1.7.0";
     internal const string Repository = "TheLittleBlueBird/SpriteCheck";
     internal const string Releases = "https://github.com/" + Repository + "/releases";
     internal const string Api = "https://api.github.com/repos/" + Repository + "/releases/latest";

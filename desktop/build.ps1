@@ -16,7 +16,7 @@ $framework = Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319'
 New-Item -ItemType Directory -Path $outputRoot -Force | Out-Null
 $appRoot = Join-Path $outputRoot 'app'
 New-Item -ItemType Directory -Path $appRoot -Force | Out-Null
-foreach ($name in @('index.html','style.css','app.mjs','core.mjs','png.mjs','file-drop.mjs','project-file.mjs','compare-model.mjs','compare-view.mjs','shortcuts.mjs','layout.mjs','file-menu.mjs','update.mjs')) {
+foreach ($name in @('index.html','style.css','app.mjs','core.mjs','png.mjs','file-drop.mjs','project-file.mjs','compare-model.mjs','compare-view.mjs','shortcuts.mjs','layout.mjs','file-menu.mjs','update.mjs','pixel-tools.mjs','paint-editor.mjs','paint.css')) {
     Copy-Item -LiteralPath (Join-Path $toolRoot $name) -Destination $appRoot
 }
 New-Item -ItemType Directory -Path (Join-Path $appRoot 'assets') -Force | Out-Null

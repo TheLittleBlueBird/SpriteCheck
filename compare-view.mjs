@@ -69,8 +69,8 @@ export class CompareView{
    const animation=i?right:o,current=frameAtSeconds(animation,seconds,loop),sourceId=current?.key.sourceId,s=this.settings[panel.side];
    let image=null,rect=null;
    if(s.mode==='sheet'){
-    const sheet=i?m:p.sheet.image;if(sheet){image=this.bitmap(sheet);rect=i?m.frames[sourceId]:p.sheet.frames[sourceId];}
-   }else if(sourceId!=null)image=this.frameCanvas(sourceId,!!(i&&m));
+    const sheet=i?(m??(p.hasPixelEdits?p.sheet.image:null)):(p.originalSheet??p.sheet).image;if(sheet){image=this.bitmap(sheet);rect=i&&m?m.frames[sourceId]:p.sheet.frames[sourceId];}
+   }else if(sourceId!=null)image=this.frameCanvas(sourceId,!!(i&&m),!i);
    const w=Math.max(1,panel.stage.clientWidth),h=Math.max(1,panel.stage.clientHeight),dpr=Math.min(2,window.devicePixelRatio||1),c=panel.canvas;
    if(c.width!==Math.round(w*dpr)||c.height!==Math.round(h*dpr)){c.width=Math.round(w*dpr);c.height=Math.round(h*dpr);}
    const ctx=c.getContext('2d');ctx.setTransform(dpr,0,0,dpr,0,0);ctx.clearRect(0,0,w,h);ctx.imageSmoothingEnabled=false;

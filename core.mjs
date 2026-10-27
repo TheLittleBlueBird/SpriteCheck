@@ -1,7 +1,7 @@
 export const ROW_NAMES=['Idle FL','Idle BL','Walk FL','Walk BL','Hit FL','Hit BL','Die FL','Die BL','ATK01 FL','ATK01 BL','ATK02 FL','ATK02 BL'];
 export const clone=value=>structuredClone(value);
 export const HISTORY_LIMIT=50;
-function remember(stack,state){stack.push(clone(state));if(stack.length>HISTORY_LIMIT)stack.shift();}
+function remember(stack,transaction){stack.push(transaction);if(stack.length>HISTORY_LIMIT)stack.shift();}
 const equal=(a,b)=>a.length===b.length&&a.every((x,i)=>x===b[i]);
 function hash(data){let h=2166136261;for(const b of data)h=Math.imul(h^b,16777619);return h>>>0;}
 export function sliceSheet(image,grid){
@@ -30,10 +30,41 @@ export function mergeSheet(sheet,animations,scope='row',base='sprite'){
  return {width,height,data,frames,manifest,sourceToFrame,counts,scope};
 }
 export class Project{
- constructor(sheet){this.sheet=sheet;this.draft=clone(sheet.original);this.confirmed=null;this.merged=null;this.detection=null;this.dirty=false;this.undoStack=[];this.redoStack=[];}
- change(mutator){const next=clone(this.draft);mutator(next);validateAnimations(this.sheet,next);if(JSON.stringify(next)===JSON.stringify(this.draft))return false;remember(this.undoStack,this.draft);this.redoStack=[];this.draft=next;this.dirty=true;this.merged=null;return true;}
- undo(){if(!this.undoStack.length)return false;remember(this.redoStack,this.draft);this.draft=this.undoStack.pop();this.dirty=true;this.merged=null;return true;}
- redo(){if(!this.redoStack.length)return false;remember(this.undoStack,this.draft);this.draft=this.redoStack.pop();this.dirty=true;this.merged=null;return true;}
+ #editedSourceIds=new Set();
+ constructor(sheet,workingImage=null){
+  // A source frame keeps its ID and cell even after every visible pixel is erased.
+  // History stores cell replacements, never a full sprite sheet per brush stroke.
+  const image={width:sheet.image.width,height:sheet.image.height,data:new Uint8ClampedArray(sheet.image.data)},grid={...sheet.grid};
+  const frames=sheet.frames.map(frame=>Object.freeze({...frame,data:new Uint8ClampedArray(frame.data)}));
+  const cells=sheet.cells.map(cell=>Object.freeze({...cell})),original=clone(sheet.original);
+  for(const row of original){for(const key of row.keys)Object.freeze(key);Object.freeze(row.keys);Object.freeze(row);}
+  Object.defineProperty(this,'originalSheet',{value:Object.freeze({image:Object.freeze(image),grid:Object.freeze(grid),frames:Object.freeze(frames),cells:Object.freeze(cells),original:Object.freeze(original)}),enumerable:true});
+  if(workingImage&&(workingImage.width!==image.width||workingImage.height!==image.height||workingImage.data?.length!==image.data.length))throw new Error('Working PNG dimensions do not match the original sprite sheet.');
+  this.sheet={image:{width:image.width,height:image.height,data:new Uint8ClampedArray(image.data)},grid:{...grid},frames:frames.map(frame=>({...frame})),cells:cells.map(cell=>({...cell})),original};
+  if(workingImage){
+   for(const frame of frames){const data=new Uint8ClampedArray(frame.data.length);for(let y=0;y<grid.cellHeight;y++){const start=((frame.y+y)*image.width+frame.x)*4;data.set(workingImage.data.subarray(start,start+grid.cellWidth*4),y*grid.cellWidth*4);}if(!equal(frame.data,data))this.#replacePixels(frame.id,data);}
+   // Margins, gaps and cells without an original source cannot be painted.
+   if(!equal(this.sheet.image.data,workingImage.data))throw new Error('Working PNG changed pixels outside an original source frame.');
+  }
+  this.draft=clone(original);this.confirmed=null;this.merged=null;this.detection=null;this.dirty=false;this.undoStack=[];this.redoStack=[];
+ }
+ get hasPixelEdits(){return this.#editedSourceIds.size>0;}
+ #replacePixels(sourceId,data){
+  const frame=this.sheet.frames[sourceId],{cellWidth:w,cellHeight:h}=this.sheet.grid;frame.data=data;
+  for(let y=0;y<h;y++)this.sheet.image.data.set(data.subarray(y*w*4,(y+1)*w*4),((frame.y+y)*this.sheet.image.width+frame.x)*4);
+  if(equal(data,this.originalSheet.frames[sourceId].data))this.#editedSourceIds.delete(sourceId);else this.#editedSourceIds.add(sourceId);
+ }
+ #invalidate(clearDetection=false){this.dirty=true;this.merged=null;if(clearDetection)this.detection=null;}
+ change(mutator){const next=clone(this.draft);mutator(next);validateAnimations(this.sheet,next);if(JSON.stringify(next)===JSON.stringify(this.draft))return false;remember(this.undoStack,{kind:'timeline',before:clone(this.draft),after:next});this.redoStack=[];this.draft=next;this.#invalidate();return true;}
+ paintFrame(sourceId,rgba){
+  const frame=Number.isInteger(sourceId)&&this.sheet.frames[sourceId];if(!frame)throw new Error('Choose an existing source frame to paint.');
+  if(!(rgba instanceof Uint8Array||rgba instanceof Uint8ClampedArray)||rgba.length!==frame.data.length)throw new Error('Paint RGBA must match the source frame cell size.');
+  if(equal(frame.data,rgba))return false;
+  const after=new Uint8ClampedArray(rgba);remember(this.undoStack,{kind:'pixels',sourceId,before:frame.data,after});this.redoStack=[];this.#replacePixels(sourceId,after);this.#invalidate(true);return true;
+ }
+ #restore(transaction,direction){if(transaction.kind==='pixels')this.#replacePixels(transaction.sourceId,transaction[direction]);else this.draft=clone(transaction[direction]);this.#invalidate(true);}
+ undo(){if(!this.undoStack.length)return false;const transaction=this.undoStack.pop();this.#restore(transaction,'before');remember(this.redoStack,transaction);return true;}
+ redo(){if(!this.redoStack.length)return false;const transaction=this.redoStack.pop();this.#restore(transaction,'after');remember(this.undoStack,transaction);return true;}
  detect(){return this.detection=detectDuplicates(this.sheet);}
  confirm(){validateAnimations(this.sheet,this.draft);this.confirmed=clone(this.draft);this.dirty=false;this.merged=null;}
  merge(scope,base){if(!this.confirmed||this.dirty)throw new Error('Confirm your current timeline before merging.');this.merged=mergeSheet(this.sheet,this.confirmed,scope,base);return this.merged;}

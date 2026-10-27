@@ -1,8 +1,9 @@
 import {Project,sliceSheet,clone,validateAnimations} from './core.mjs';
-import {decodePNG} from './png.mjs';
+import {decodePNG,encodePNG} from './png.mjs';
 import {compareSettings} from './compare-model.mjs';
 
-// Versioned local project container. PNG bytes are stored verbatim, never resampled.
+// v1 stores the original PNG verbatim. v2 adds a lossless working PNG so edits
+// cannot replace the baseline, and older readers explicitly reject painted work.
 const MAGIC=new TextEncoder().encode('SPRITECHECK-DAT\0');
 const HEADER=64,MAX_PNG=64*1024*1024,MAX_META=4*1024*1024;
 const encoder=new TextEncoder();
@@ -20,30 +21,35 @@ function animations(sheet,value){
 }
 function viewState(view={}){
  return {row:Number.isInteger(view.row)&&view.row>=0?view.row:0,selectedKey:Number.isInteger(view.selectedKey)?view.selectedKey:0,selectedSource:Number.isInteger(view.selectedSource)&&view.selectedSource>=0?view.selectedSource:null,
-  mode:['original','edited','merged'].includes(view.mode)?view.mode:'edited',sheetMode:view.sheetMode==='merged'?'merged':'original',tab:view.tab==='compare'?'compare':'sheet',
+  mode:['original','edited','merged'].includes(view.mode)?view.mode:'edited',sheetMode:view.sheetMode==='merged'?'merged':'original',tab:['compare','paint'].includes(view.tab)?view.tab:'sheet',
   seconds:Number.isFinite(view.seconds)&&view.seconds>=0?Math.min(view.seconds,1e9):0,showGrid:view.showGrid!==false,
   exportName:typeof view.exportName==='string'?view.exportName.slice(0,80):'sprite',scope:view.scope==='sheet'?'sheet':'row',compare:compareSettings(view.compare)};
 }
 export async function encodeProject({project,pngBytes,sourceName,view={}}){
  const png=bytes(pngBytes);if(!png.length||png.length>MAX_PNG)throw new Error('Source PNG must be at most 64 MiB.');
  const draft=animations(project.sheet,project.draft),confirmed=project.confirmed?animations(project.sheet,project.confirmed):null;
- const metadata={format:'sprite-check-project',version:1,appVersion:'1.6.3',sourceName:String(sourceName||'sprite.png').slice(0,255),
+ const version=project.hasPixelEdits?2:1;
+ const metadata={format:'sprite-check-project',version,appVersion:'1.7.0',sourceName:String(sourceName||'sprite.png').slice(0,255),
   grid:Object.fromEntries(['cellWidth','cellHeight','offsetX','offsetY','gapX','gapY'].map(k=>[k,project.sheet.grid[k]])),
   draft,confirmed,dirty:!!project.dirty,detected:!!project.detection,merged:!!project.merged,view:viewState(view)};
  const meta=encoder.encode(JSON.stringify(metadata));if(meta.length>MAX_META)throw new Error('Project timeline exceeds the .dat size limit.');
- const out=new Uint8Array(HEADER+meta.length+png.length),header=new DataView(out.buffer);out.set(MAGIC);header.setUint32(16,1,true);header.setUint32(20,meta.length,true);header.setUint32(24,png.length,true);
- out.set(meta,HEADER);out.set(png,HEADER+meta.length);out.set(new Uint8Array(await crypto.subtle.digest('SHA-256',out.subarray(HEADER))),32);return out;
+ const workingPNG=version===2?await encodePNG(project.sheet.image):new Uint8Array();
+ if(png.length+workingPNG.length>MAX_PNG)throw new Error('Original and working PNGs together must be at most 64 MiB.');
+ const out=new Uint8Array(HEADER+meta.length+png.length+workingPNG.length),header=new DataView(out.buffer);out.set(MAGIC);header.setUint32(16,version,true);header.setUint32(20,meta.length,true);header.setUint32(24,png.length,true);header.setUint32(28,workingPNG.length,true);
+ out.set(meta,HEADER);out.set(png,HEADER+meta.length);out.set(workingPNG,HEADER+meta.length+png.length);out.set(new Uint8Array(await crypto.subtle.digest('SHA-256',out.subarray(HEADER))),32);return out;
 }
 export async function decodeProject(input){
  const data=bytes(input);if(data.length<HEADER||data.length>HEADER+MAX_PNG+MAX_META||!MAGIC.every((v,i)=>data[i]===v))fail();
- const header=new DataView(data.buffer,data.byteOffset,data.byteLength);if(header.getUint32(16,true)!==1)throw new Error('Unsupported .dat version. Open this project in a newer Sprite Check.');
- const metaLength=header.getUint32(20,true),pngLength=header.getUint32(24,true);
- if(!metaLength||metaLength>MAX_META||!pngLength||pngLength>MAX_PNG||data.length!==HEADER+metaLength+pngLength||header.getUint32(28,true)!==0)fail();
+ const header=new DataView(data.buffer,data.byteOffset,data.byteLength),version=header.getUint32(16,true);if(![1,2].includes(version))throw new Error('Unsupported .dat version. Open this project in a newer Sprite Check.');
+ const metaLength=header.getUint32(20,true),pngLength=header.getUint32(24,true),workingLength=header.getUint32(28,true);
+ if((version===1&&workingLength!==0)||(version===2&&!workingLength))throw new Error('Invalid .dat version payload.');
+ if(!metaLength||metaLength>MAX_META||!pngLength||pngLength+workingLength>MAX_PNG||data.length!==HEADER+metaLength+pngLength+workingLength)fail();
  const digest=new Uint8Array(await crypto.subtle.digest('SHA-256',data.subarray(HEADER)));if(!digest.every((v,i)=>v===data[32+i]))throw new Error('The .dat checksum does not match. The file may be incomplete or damaged.');
  let meta;try{meta=JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(data.subarray(HEADER,HEADER+metaLength)));}catch{fail();}
- if(meta?.format!=='sprite-check-project'||meta.version!==1||typeof meta.sourceName!=='string'||!meta.grid||typeof meta.dirty!=='boolean'||typeof meta.detected!=='boolean'||typeof meta.merged!=='boolean')fail();
- const pngBytes=data.slice(HEADER+metaLength),image=await decodePNG(pngBytes),sheet=sliceSheet(image,meta.grid);if(!sheet.frames.length)fail();
- const project=new Project(sheet);project.draft=animations(sheet,meta.draft);project.confirmed=meta.confirmed===null?null:animations(sheet,meta.confirmed);project.dirty=meta.dirty;
+ if(meta?.format!=='sprite-check-project'||meta.version!==version||typeof meta.sourceName!=='string'||!meta.grid||typeof meta.dirty!=='boolean'||typeof meta.detected!=='boolean'||typeof meta.merged!=='boolean')fail();
+ const pngStart=HEADER+metaLength,pngBytes=data.slice(pngStart,pngStart+pngLength),image=await decodePNG(pngBytes),sheet=sliceSheet(image,meta.grid);if(!sheet.frames.length)fail();
+ const workingImage=version===2?await decodePNG(data.subarray(pngStart+pngLength)):null;
+ const project=new Project(sheet,workingImage);project.draft=animations(sheet,meta.draft);project.confirmed=meta.confirmed===null?null:animations(sheet,meta.confirmed);project.dirty=meta.dirty;
  if(project.confirmed&&!project.dirty&&JSON.stringify(project.draft)!==JSON.stringify(project.confirmed))fail();
  const view=viewState(meta.view);view.row=Math.min(view.row,sheet.original.length-1);view.selectedKey=Math.max(-1,Math.min(view.selectedKey,project.draft[view.row].keys.length-1));
  const selected=sheet.frames[view.selectedSource];view.selectedSource=project.draft[view.row].keys[view.selectedKey]?.sourceId??(selected?.row===view.row?selected.id:sheet.original[view.row].keys[0]?.sourceId??null);

@@ -1,7 +1,12 @@
-Sprite Check 1.6.3 - Windows x64 portable
+Sprite Check 1.7.0 - Windows x64 portable
 
 1. Extract the complete ZIP to a writable folder.
 2. Open Sprite Check.exe. No Node.js or local server is needed.
+   v1.7.0: select a frame and open PAINT to draw/erase/pick/fill pixels.
+   One stroke uses one of the shared 50 Undo/Redo steps. SAVE EDITED PNG
+   exports a corrected sheet without Merge; Confirm/Merge also use repaired pixels.
+   Painted projects save as DAT v2 (requires1.7.0+); original PNG is retained.
+   Existing DAT v1 projects still open. Aseprite is not required to use Paint.
 3. File menu at the top provides Open PNG, Open/Save DAT and Reset Scene.
    Open/Save DAT also have quick buttons in the top bar. Reset asks before
    clearing the current scene; it keeps your pane sizes and source files.

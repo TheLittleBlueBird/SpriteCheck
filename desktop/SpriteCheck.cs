@@ -12,8 +12,8 @@ using Microsoft.Web.WebView2.WinForms;
 
 [assembly: System.Reflection.AssemblyTitle("Sprite Check")]
 [assembly: System.Reflection.AssemblyProduct("Sprite Check")]
-[assembly: System.Reflection.AssemblyVersion("1.6.3.0")]
-[assembly: System.Reflection.AssemblyFileVersion("1.6.3.0")]
+[assembly: System.Reflection.AssemblyVersion("1.7.0.0")]
+[assembly: System.Reflection.AssemblyFileVersion("1.7.0.0")]
 
 internal static class Program {
     [STAThread]
@@ -43,7 +43,7 @@ internal sealed class SpriteCheckWindow : Form {
     public SpriteCheckWindow(string[] arguments) {
         args = arguments;
         selfTest = args.Contains("--self-test");
-        Text = "Sprite Check 1.6.3";
+        Text = "Sprite Check 1.7.0";
         BackColor = Color.FromArgb(11, 13, 23);
         StartPosition = FormStartPosition.CenterScreen;
         var available = Screen.PrimaryScreen.WorkingArea;
@@ -81,7 +81,7 @@ internal sealed class SpriteCheckWindow : Form {
             core.Settings.IsZoomControlEnabled = false;
             core.Settings.IsPasswordAutosaveEnabled = false;
             core.Settings.IsGeneralAutofillEnabled = false;
-            await core.AddScriptToExecuteOnDocumentCreatedAsync("window.spriteCheckDesktop = {version:'1.6.3'};");
+            await core.AddScriptToExecuteOnDocumentCreatedAsync("window.spriteCheckDesktop = {version:'1.7.0'};");
             core.NewWindowRequested += (sender, e) => { e.Handled = true; };
             core.PermissionRequested += (sender, e) => { e.State = CoreWebView2PermissionState.Deny; };
             core.NavigationStarting += (sender, e) => {
@@ -306,11 +306,47 @@ internal sealed class SpriteCheckWindow : Form {
         await Check("Original PNG reopens normally after Reset Scene", "spriteCheck.project!==null && spriteCheck.project.sheet.frames.length===116 && !spriteCheck.playing");
     }
 
+    private async Task WaitForSaved(string name) {
+        string path=Path.Combine(testDirectory,name);
+        for(int n=0;n<200&&!File.Exists(path);n++)await Task.Delay(100);
+        if(!File.Exists(path))throw new Exception("Native paint save did not complete: "+name);
+        await Task.Delay(100);
+    }
+
+    private async Task CheckPaintEditor() {
+        await web.CoreWebView2.ExecuteScriptAsync("document.getElementById('compareTab').click();window.__paintOriginalBefore=document.getElementById('compareOriginal').toDataURL();window.__paintEditedBefore=document.getElementById('compareMerged').toDataURL();document.getElementById('paintTab').click()");
+        await Check("Paint opens a selected source frame with a usable canvas", "!document.getElementById('paintViewport').hidden && spriteCheck.paint.sourceId===0 && spriteCheck.paint.geometry.scale>0 && document.getElementById('paintCanvas').height>100 && document.getElementById('paintFrameSelect').value==='0'");
+        // Integration probe uses the application's normal commit callback; physical strokes are checked separately through CUA.
+        await web.CoreWebView2.ExecuteScriptAsync("{const p=spriteCheck.project,f=p.sheet.frames[0],data=f.data.slice();window.__paintOffset=(9*p.sheet.grid.cellWidth+7)*4;window.__paintOriginal=Array.from(f.data.subarray(__paintOffset,__paintOffset+4));data.set([255,29,223,255],__paintOffset);spriteCheck.paint.onCommit(0,data);}");
+        await Check("Paint replaces one source buffer, keeps baseline and records one undo", "spriteCheck.project.hasPixelEdits && spriteCheck.project.undoStack.length===1 && spriteCheck.project.dirty && spriteCheck.project.sheet.frames[0].data[__paintOffset]===255 && spriteCheck.project.originalSheet.frames[0].data[__paintOffset]===__paintOriginal[0] && spriteCheck.project.sheet.frames.length===116");
+        await Check("Live Preview refreshes after a pixel edit", "document.getElementById('previewMode').textContent==='PAINT FRAME' && document.getElementById('paintResetFrame').disabled===false && document.getElementById('paintPalette').querySelector('[aria-label=\"#FF1DDFFF\"]')!==null");
+        await web.CoreWebView2.ExecuteScriptAsync("document.getElementById('compareTab').click()");
+        await Check("Original Compare stays unchanged while edited Compare pixels change", "document.getElementById('compareOriginal').toDataURL()===__paintOriginalBefore && document.getElementById('compareMerged').toDataURL()!==__paintEditedBefore");
+        await web.CoreWebView2.ExecuteScriptAsync("document.getElementById('paintTab').click();document.getElementById('paintUndo').click()");
+        await Check("Paint Undo restores exact pixels without moving source IDs", "!spriteCheck.project.hasPixelEdits && spriteCheck.project.undoStack.length===0 && spriteCheck.project.redoStack.length===1 && spriteCheck.project.sheet.frames[0].id===0 && spriteCheck.project.sheet.frames[0].data[__paintOffset]===__paintOriginal[0]");
+        await web.CoreWebView2.ExecuteScriptAsync("document.getElementById('paintRedo').click();{const p=spriteCheck.project;spriteCheck.paint.onCommit(0,new Uint8ClampedArray(p.sheet.frames[0].data.length));}");
+        await Check("Erasing a whole frame preserves its cell and timeline references", "spriteCheck.project.sheet.frames[0].data.every(n=>n===0) && spriteCheck.project.sheet.frames[0].id===0 && spriteCheck.project.sheet.cells[0].frameId===0 && spriteCheck.project.draft[0].keys[0].sourceId===0 && spriteCheck.project.sheet.frames.length===116");
+        await web.CoreWebView2.ExecuteScriptAsync("document.getElementById('paintUndo').click();document.getElementById('exportName').value='paint-native';document.getElementById('saveProject').click()");
+        await WaitForSaved("paint-native.dat");
+        await web.CoreWebView2.ExecuteScriptAsync("document.getElementById('paintExport').click()");
+        await WaitForSaved("paint-native-edited.png");
+        await OpenFile(Path.Combine(testDirectory,"paint-native.dat"));
+        await Check("Painted DAT v2 reopens Paint, working pixels and original source with fresh history", "spriteCheck.project.hasPixelEdits && !document.getElementById('paintViewport').hidden && spriteCheck.project.sheet.frames[0].data[__paintOffset]===255 && spriteCheck.project.originalSheet.frames[0].data[__paintOffset]===__paintOriginal[0] && spriteCheck.project.undoStack.length===0 && spriteCheck.paint.sourceId===0");
+        await web.CoreWebView2.ExecuteScriptAsync("document.getElementById('confirm').click();document.getElementById('merge').click()");
+        for(int n=0;n<200&&await web.CoreWebView2.ExecuteScriptAsync("!!spriteCheck.project.merged && !document.body.classList.contains('busy')")!="true";n++)await Task.Delay(100);
+        await Check("Merge after painting preserves twelve animation rows and edited source references", "spriteCheck.project.merged?.manifest.animations.length===12 && spriteCheck.project.merged.manifest.animations.reduce((n,a)=>n+a.totalTicks,0)===116");
+        await web.CoreWebView2.ExecuteScriptAsync("document.getElementById('export').click();document.getElementById('downloadBoth').click();document.getElementById('exportDialog').close();document.getElementById('paintTab').click()");
+        await WaitForSaved("paint-native-merged.png");await WaitForSaved("paint-native-merged.json");
+        using(var image=File.Create(Path.Combine(testDirectory,"native-paint.png")))await web.CoreWebView2.CapturePreviewAsync(CoreWebView2CapturePreviewImageFormat.Png,image);
+        await Check("Paint controls keep at least 12px text", "[...document.querySelectorAll('#paintViewport button,#paintViewport input,#paintViewport label,#paintViewport span')].filter(e=>e.getClientRects().length).every(e=>parseFloat(getComputedStyle(e).fontSize)>=12)");
+        await OpenFile(Path.Combine(root,"app","assets","test-sheet.png"));
+    }
+
     private async Task RunSelfTest() {
-        testLog.WriteLine("Sprite Check 1.6.3 native WinForms/WebView2 runtime " + web.CoreWebView2.Environment.BrowserVersionString);
+        testLog.WriteLine("Sprite Check 1.7.0 native WinForms/WebView2 runtime " + web.CoreWebView2.Environment.BrowserVersionString);
         await web.CoreWebView2.ExecuteScriptAsync("document.getElementById('fileMenuButton').click();document.getElementById('menuUpdate').click()");
         for (int n = 0; n < 250 && await web.CoreWebView2.ExecuteScriptAsync("document.getElementById('updateStatus').dataset.state==='checking'") == "true"; n++) await Task.Delay(100);
-        await Check("File Update works in an empty scene and reports current published version", "document.getElementById('updateDialog').open && document.getElementById('updateCurrent').textContent==='1.6.3' && document.getElementById('updateLatest').textContent==='1.6.3' && document.getElementById('updateStatus').dataset.state==='current' && document.getElementById('updateInstall').hidden && spriteCheck.project===null");
+        await Check("File Update works in an empty scene with no newer published release", "document.getElementById('updateDialog').open && document.getElementById('updateCurrent').textContent==='1.7.0' && /^[0-9]+[.][0-9]+[.][0-9]+$/.test(document.getElementById('updateLatest').textContent) && document.getElementById('updateStatus').dataset.state==='current' && document.getElementById('updateInstall').hidden && spriteCheck.project===null");
         await Check("Native Update dialog text is at least 12px", "[...document.querySelectorAll('#updateDialog *')].filter(e=>e.getClientRects().length&&e.textContent.trim()).every(e=>parseFloat(getComputedStyle(e).fontSize)>=12)");
         using (var updateImage = File.Create(Path.Combine(testDirectory, "native-update-current.png"))) await web.CoreWebView2.CapturePreviewAsync(CoreWebView2CapturePreviewImageFormat.Png, updateImage);
         await web.CoreWebView2.ExecuteScriptAsync("document.getElementById('updateClose').click()");
@@ -319,6 +355,7 @@ internal sealed class SpriteCheckWindow : Form {
         await OpenFile(Path.Combine(root, "app", "assets", "test-sheet.png"));
         for (int n = 0; n < 100 && await web.CoreWebView2.ExecuteScriptAsync("spriteCheck.project!==null") != "true"; n++) await Task.Delay(100);
         await CheckFileMenuAndLog();
+        await CheckPaintEditor();
         await web.CoreWebView2.ExecuteScriptAsync("document.querySelector('[data-row=\"8\"]').click();{const c=document.getElementById('sheetCanvas'),r=c.getBoundingClientRect(),f=spriteCheck.project.sheet.frames.find(f=>f.row===8&&f.column===3),g=spriteCheck.project.sheet.grid;c.dispatchEvent(new MouseEvent('click',{bubbles:true,clientX:r.left+(f.x+g.cellWidth/2)*r.width/c.width,clientY:r.top+(f.y+g.cellHeight/2)*r.height/c.height}))}");
         await Check("Sheet selection seeks and pauses on clicked key", "!spriteCheck.playing && Math.abs(spriteCheck.time-.25)<1e-9 && document.getElementById('previewCounter').textContent==='04 / 8' && document.getElementById('selectedLabel').textContent==='KEY 04' && spriteCheck.project.undoStack.length===0");
         await Check("Live Preview pixels match clicked source", @"(()=>{const s=spriteCheck.project.sheet,f=s.frames.find(f=>f.row===8&&f.column===3),a=document.getElementById('previewCanvas'),e=document.createElement('canvas'),c=document.createElement('canvas');e.width=a.width;e.height=a.height;c.width=s.grid.cellWidth;c.height=s.grid.cellHeight;c.getContext('2d').putImageData(new ImageData(f.data,c.width,c.height),0,0);const x=e.getContext('2d'),factor=Math.min(a.width*.78/c.width,a.height*.88/c.height),scale=factor>=1?Math.floor(factor):factor;x.imageSmoothingEnabled=false;x.drawImage(c,Math.floor((a.width-c.width*scale)/2),Math.floor((a.height-c.height*scale)/2),Math.max(1,Math.floor(c.width*scale)),Math.max(1,Math.floor(c.height*scale)));const p=a.getContext('2d').getImageData(0,0,a.width,a.height).data,q=x.getImageData(0,0,a.width,a.height).data;return p.every((v,i)=>v===q[i]);})()");
