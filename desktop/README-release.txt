@@ -1,8 +1,10 @@
-Sprite Check 1.7.1 - Windows x64 portable
+Sprite Check 1.7.2 - Windows x64 portable
 
 1. Extract the complete ZIP to a writable folder.
 2. Open Sprite Check.exe. No Node.js or local server is needed.
-   v1.7.1: Paint icons; Alt + left click picks RGBA without changing tools.
+   v1.7.2: PNG import and merged exports up to 8192 x 8192; no resizing.
+   Large imports adjust the initial grid if needed; check GRID before editing.
+   Paint icons; Alt + left click picks RGBA without changing tools.
    BACKGROUND at the top changes Sheet/Compare/Paint/Preview together.
    Choose checkerboard, custom color or black/gray/white; preferences persist.
    Background is view-only and never changes transparent pixels or PNG exports.

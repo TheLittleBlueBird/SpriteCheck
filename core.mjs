@@ -1,3 +1,4 @@
+import {assertImageSize,MAX_GRID_CELLS} from './image-limits.mjs';
 export const ROW_NAMES=['Idle FL','Idle BL','Walk FL','Walk BL','Hit FL','Hit BL','Die FL','Die BL','ATK01 FL','ATK01 BL','ATK02 FL','ATK02 BL'];
 export const clone=value=>structuredClone(value);
 export const HISTORY_LIMIT=50;
@@ -5,10 +6,11 @@ function remember(stack,transaction){stack.push(transaction);if(stack.length>HIS
 const equal=(a,b)=>a.length===b.length&&a.every((x,i)=>x===b[i]);
 function hash(data){let h=2166136261;for(const b of data)h=Math.imul(h^b,16777619);return h>>>0;}
 export function sliceSheet(image,grid){
+ assertImageSize(image.width,image.height);
  const {cellWidth:w,cellHeight:h,offsetX=0,offsetY=0,gapX=0,gapY=0}=grid;
  for(const [name,v] of Object.entries({cellWidth:w,cellHeight:h,offsetX,offsetY,gapX,gapY}))if(!Number.isInteger(v)||v<(name.startsWith('cell')?1:0))throw new Error('Grid values must be valid whole pixels.');
  const columns=Math.floor((image.width-offsetX+gapX)/(w+gapX)),rows=Math.floor((image.height-offsetY+gapY)/(h+gapY));
- if(!columns||!rows)throw new Error('The cell is larger than the sprite sheet.');if(columns*rows>4096)throw new Error('Please use a grid with at most 4,096 cells.');
+ if(columns<1||rows<1)throw new Error('The cell is larger than the sprite sheet.');if(columns*rows>MAX_GRID_CELLS)throw new Error('Please use a grid with at most 4,096 cells.');
  const frames=[],animations=[],cells=[];
  for(let row=0;row<rows;row++){const animation={id:(ROW_NAMES[row]||`Row ${row+1}`).toLowerCase().replaceAll(' ','_'),name:ROW_NAMES[row]||`Row ${row+1}`,row,fps:row<4?10:12,loop:true,keys:[]};for(let column=0;column<columns;column++){const x=offsetX+column*(w+gapX),y=offsetY+row*(h+gapY),data=new Uint8ClampedArray(w*h*4);let occupied=false;
  for(let py=0;py<h;py++){const begin=((y+py)*image.width+x)*4;data.set(image.data.subarray(begin,begin+w*4),py*w*4);}for(let i=3;i<data.length;i+=4)if(data[i]){occupied=true;break;}
@@ -23,7 +25,7 @@ export function validateAnimations(sheet,animations){if(animations.length!==shee
 export function mergeSheet(sheet,animations,scope='row',base='sprite'){
  validateAnimations(sheet,animations);if(!['row','sheet'].includes(scope))throw new Error('Invalid merge scope.');const detector=detectDuplicates(sheet),frames=[],sourceToFrame=new Map(),uniqueByKey=new Map(),counts=Array(sheet.grid.rows).fill(0);
  for(const animation of animations)for(const key of animation.keys){if(sourceToFrame.has(key.sourceId))continue;const source=sheet.frames[key.sourceId],identity=(scope==='row'?`${source.row}:`:'')+detector.frameGroup.get(source.id);let target=uniqueByKey.get(identity);if(!target){target={id:frames.length,row:source.row,column:counts[source.row]++,sourceId:source.id};frames.push(target);uniqueByKey.set(identity,target);}sourceToFrame.set(source.id,target.id);}
- const columns=Math.max(1,...counts),width=columns*sheet.grid.cellWidth,height=sheet.grid.rows*sheet.grid.cellHeight;if(width*height>16777216)throw new Error('Merged sheet exceeds 16 megapixels.');const data=new Uint8ClampedArray(width*height*4);
+ const columns=Math.max(1,...counts),width=columns*sheet.grid.cellWidth,height=sheet.grid.rows*sheet.grid.cellHeight;assertImageSize(width,height);const data=new Uint8ClampedArray(width*height*4);
  const manifest={format:'sprite-check',version:1,image:`${base}-merged.png`,coordinateOrigin:'top-left',cellWidth:sheet.grid.cellWidth,cellHeight:sheet.grid.cellHeight,width,height,columns,rows:sheet.grid.rows,pixelsPerUnit:64,pivot:{x:0.5,y:0.08},mergeScope:scope,frames:[],animations:[]};
  for(const frame of frames){const source=sheet.frames[frame.sourceId],x=frame.column*sheet.grid.cellWidth,y=frame.row*sheet.grid.cellHeight;frame.x=x;frame.y=y;for(let py=0;py<sheet.grid.cellHeight;py++)data.set(source.data.subarray(py*sheet.grid.cellWidth*4,(py+1)*sheet.grid.cellWidth*4),((y+py)*width+x)*4);manifest.frames.push({id:frame.id,x,y,width:sheet.grid.cellWidth,height:sheet.grid.cellHeight,row:frame.row,sourceColumn:source.column});}
  for(const animation of animations){const timeline=[];for(const key of animation.keys){const frame=sourceToFrame.get(key.sourceId),last=timeline.at(-1);if(last&&last.frame===frame)last.ticks+=key.ticks;else timeline.push({frame,ticks:key.ticks});}manifest.animations.push({id:animation.id,name:animation.name,row:animation.row,fps:animation.fps,loop:animation.loop,totalTicks:ticks(animation),timeline});}

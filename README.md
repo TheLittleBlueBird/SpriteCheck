@@ -1,4 +1,7 @@
-# Sprite Check v1.7.1
+# Sprite Check v1.7.2
+
+รองรับ PNG และผล Merge สูงสุด **8192 × 8192 พิกเซล** (64 Mi pixels) โดยไม่ย่อภาพ; Paint Fit รองรับเฟรมใหญ่ด้วย เมื่อนำเข้าภาพใหญ่ ระบบปรับ Grid เริ่มต้นหากเกิน4,096ช่อง ให้ตรวจและตั้งขนาดช่องของ Artist ใน GRID ก่อนทำงาน ขีดจำกัดไฟล์ PNG รวมใน DAT ยังคง64MiB และ metadata4MiB ตามเดิม
+
 
 Paint ใช้ไอคอนพร้อม tooltip และชื่อเครื่องมือสำหรับ accessibility; ดูดสีชั่วคราวด้วย **Alt + คลิกซ้าย** โดยเครื่องมือเดิมยังถูกเลือกอยู่ รองรับ Original read-only ด้วย
 
@@ -220,7 +223,7 @@ Unity ไม่อ่าน schema นี้เองโดยอัตโนม
 ## ขอบเขตและการตรวจสอบ
 
 - PNG RGB/RGBA/grayscale 8-bit และ indexed palette 1/2/4/8-bit แบบ non-interlaced ตัวอ่าน PNG ตรวจ CRC และรักษา RGBA รวม RGB ที่ซ่อนใต้ alpha 0; ไม่ใช้ Canvas เพื่อแปลงข้อมูลที่ส่งออก
-- จำกัด 16 megapixels และ 4,096 ช่องต่อ Sheet; ไฟล์ 16-bit/interlaced ต้อง Export เป็น PNG 8-bit non-interlaced จากแอปวาดก่อน
+- จำกัดด้านละ 8192 พิกเซล (8192 × 8192) และ 4,096 ช่องต่อ Sheet; ไฟล์ 16-bit/interlaced ต้อง Export เป็น PNG 8-bit non-interlaced จากแอปวาดก่อน
 - Empty = ทุกพิกเซล alpha 0 หาก Artist ส่งภาพพื้นหลังทึบ ช่องพื้นหลังจะถือเป็นภาพ
 - PNG Export เป็น lossless RGBA ไม่มีการลดสี หมุน หรือตัดขอบ ไม่มี padding เพิ่ม จึงควรใช้ Point filtering ตามแนว pixel art
 - ขนาด PNG ใหม่อาจมากหรือน้อยกว่าเดิมตาม encoder และการคงแถว ไม่ได้หมายความว่าหน่วยความจำเกมลดลงในอัตราเดียวกัน

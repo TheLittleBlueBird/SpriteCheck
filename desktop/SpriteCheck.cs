@@ -12,8 +12,8 @@ using Microsoft.Web.WebView2.WinForms;
 
 [assembly: System.Reflection.AssemblyTitle("Sprite Check")]
 [assembly: System.Reflection.AssemblyProduct("Sprite Check")]
-[assembly: System.Reflection.AssemblyVersion("1.7.1.0")]
-[assembly: System.Reflection.AssemblyFileVersion("1.7.1.0")]
+[assembly: System.Reflection.AssemblyVersion("1.7.2.0")]
+[assembly: System.Reflection.AssemblyFileVersion("1.7.2.0")]
 
 internal static class Program {
     [STAThread]
@@ -43,7 +43,7 @@ internal sealed class SpriteCheckWindow : Form {
     public SpriteCheckWindow(string[] arguments) {
         args = arguments;
         selfTest = args.Contains("--self-test");
-        Text = "Sprite Check 1.7.1";
+        Text = "Sprite Check 1.7.2";
         BackColor = Color.FromArgb(11, 13, 23);
         StartPosition = FormStartPosition.CenterScreen;
         var available = Screen.PrimaryScreen.WorkingArea;
@@ -81,7 +81,7 @@ internal sealed class SpriteCheckWindow : Form {
             core.Settings.IsZoomControlEnabled = false;
             core.Settings.IsPasswordAutosaveEnabled = false;
             core.Settings.IsGeneralAutofillEnabled = false;
-            await core.AddScriptToExecuteOnDocumentCreatedAsync("window.spriteCheckDesktop = {version:'1.7.1'};");
+            await core.AddScriptToExecuteOnDocumentCreatedAsync("window.spriteCheckDesktop = {version:'1.7.2'};");
             core.NewWindowRequested += (sender, e) => { e.Handled = true; };
             core.PermissionRequested += (sender, e) => { e.State = CoreWebView2PermissionState.Deny; };
             core.NavigationStarting += (sender, e) => {
@@ -137,7 +137,7 @@ internal sealed class SpriteCheckWindow : Form {
         string name = json.Serialize(file.Name), b64 = json.Serialize(Convert.ToBase64String(File.ReadAllBytes(file.FullName)));
         string token = json.Serialize(Guid.NewGuid().ToString("N"));
         await web.CoreWebView2.ExecuteScriptAsync("(async()=>{try{await window.spriteCheck.openNativeFile(" + name + "," + b64 + ");window.__nativeOpen={token:" + token + ",ok:true};}catch(error){window.__nativeOpen={token:" + token + ",error:String(error)};}})()");
-        for (int attempt = 0; attempt < 300; attempt++) {
+        for (int attempt = 0; attempt < 1200; attempt++) {
             string result = await web.CoreWebView2.ExecuteScriptAsync("window.__nativeOpen?.token===" + token + "?window.__nativeOpen:null");
             if (result != "null") {
                 var opened = json.Deserialize<Dictionary<string, object>>(result);
@@ -308,7 +308,7 @@ internal sealed class SpriteCheckWindow : Form {
 
     private async Task WaitForSaved(string name) {
         string path=Path.Combine(testDirectory,name);
-        for(int n=0;n<200&&!File.Exists(path);n++)await Task.Delay(100);
+        for(int n=0;n<1200&&!File.Exists(path);n++)await Task.Delay(100);
         if(!File.Exists(path))throw new Exception("Native paint save did not complete: "+name);
         await Task.Delay(100);
     }
@@ -342,11 +342,42 @@ internal sealed class SpriteCheckWindow : Form {
         await OpenFile(Path.Combine(root,"app","assets","test-sheet.png"));
     }
 
+    private async Task CheckLargeSheet() {
+        ClientSize=new Size(1440,940);await Task.Delay(200);
+        await OpenFile(Path.Combine(testDirectory,"large-8192.png"));
+        await Check("8192 PNG opens with usable auto grid and full source canvas", "spriteCheck.project.sheet.image.width===8192 && spriteCheck.project.sheet.image.height===8192 && spriteCheck.project.sheet.cells.length<=4096 && document.getElementById('sheetCanvas').width===8192 && document.getElementById('sourceDimensions').textContent==='8192 × 8192 px'");
+        await web.CoreWebView2.ExecuteScriptAsync("window.__largeFit=document.getElementById('sheetCanvas').clientWidth;document.getElementById('zoomOut').click()");
+        await Check("8192 Sheet zoom out shrinks the fitted image", "document.getElementById('sheetCanvas').clientWidth<__largeFit");
+        await web.CoreWebView2.ExecuteScriptAsync("document.getElementById('zoomFit').click();document.getElementById('openGrid').click();for(const id of ['cellWidth','cellHeight'])document.getElementById(id).value='2048';document.getElementById('gridForm').dispatchEvent(new Event('submit',{bubbles:true,cancelable:true}));document.getElementById('paintTab').click();document.getElementById('paintFit').click()");
+        await Check("8192 custom grid keeps sixteen source frames and Paint fits", "spriteCheck.project.sheet.frames.length===16 && spriteCheck.project.sheet.grid.rows===4 && spriteCheck.paint.zoom*2048<=document.getElementById('paintStage').clientHeight && !document.getElementById('paintViewport').hidden");
+        await web.CoreWebView2.ExecuteScriptAsync("document.getElementById('exportName').value='large-original';document.getElementById('saveProject').click()");
+        await WaitForSaved("large-original.dat");await OpenFile(Path.Combine(testDirectory,"large-original.dat"));
+        await Check("8192 unpainted DAT v1 reopens full dimensions and source frame order", "spriteCheck.project.sheet.image.width===8192 && spriteCheck.project.sheet.image.height===8192 && !spriteCheck.project.hasPixelEdits && spriteCheck.project.sheet.frames.length===16 && spriteCheck.project.draft.every((a,r)=>a.keys.every((k,c)=>k.sourceId===r*4+c))");
+        await web.CoreWebView2.ExecuteScriptAsync("{const p=spriteCheck.project,data=p.sheet.frames[0].data.slice();data.set([251,99,33,255],(9*2048+7)*4);spriteCheck.paint.onCommit(0,data);}document.getElementById('paintUndo').click();document.getElementById('paintRedo').click();document.getElementById('exportName').value='large-8192';document.getElementById('saveProject').click()");
+        await WaitForSaved("large-8192.dat");
+        await web.CoreWebView2.ExecuteScriptAsync("document.getElementById('paintExport').click()");
+        await WaitForSaved("large-8192-edited.png");
+        await OpenFile(Path.Combine(testDirectory,"large-8192.dat"));
+        await Check("8192 painted DAT reopens original and working pixels with original timeline", "spriteCheck.project.sheet.image.width===8192 && spriteCheck.project.hasPixelEdits && spriteCheck.project.sheet.frames.length===16 && spriteCheck.project.sheet.frames[0].data[(9*2048+7)*4]===251 && spriteCheck.project.originalSheet.frames[0].data[(9*2048+7)*4]===0 && spriteCheck.project.undoStack.length===0 && spriteCheck.project.draft.every(a=>a.keys.length===4)");
+        using(var image=File.Create(Path.Combine(testDirectory,"native-large-paint.png")))await web.CoreWebView2.CapturePreviewAsync(CoreWebView2CapturePreviewImageFormat.Png,image);
+        await web.CoreWebView2.ExecuteScriptAsync("document.getElementById('confirm').click();document.getElementById('merge').click()");
+        for(int n=0;n<1200&&(await web.CoreWebView2.ExecuteScriptAsync("!!spriteCheck.project.merged && !document.body.classList.contains('busy')"))!="true";n++)await Task.Delay(100);
+        await Check("8192 Merge packs all sixteen unique frames without changing duration", "spriteCheck.project.merged.width===8192 && spriteCheck.project.merged.height===8192 && spriteCheck.project.merged.frames.length===16 && spriteCheck.project.merged.manifest.animations.every(a=>a.totalTicks===4)");
+        await web.CoreWebView2.ExecuteScriptAsync("document.getElementById('export').click();document.getElementById('downloadBoth').click()");
+        await WaitForSaved("large-8192-merged.png");await WaitForSaved("large-8192-merged.json");
+        await web.CoreWebView2.ExecuteScriptAsync("document.getElementById('exportDialog').close();document.getElementById('compareTab').click();document.getElementById('play').click()");
+        await Task.Delay(250);
+        await Check("8192 Compare animates after Merge", "!document.getElementById('compareViewport').hidden && spriteCheck.playing && spriteCheck.time>0 && document.getElementById('compareOriginal').width>0 && document.getElementById('compareMerged').width>0");
+        await web.CoreWebView2.ExecuteScriptAsync("document.getElementById('play').click()");
+        using(var image=File.Create(Path.Combine(testDirectory,"native-large-compare.png")))await web.CoreWebView2.CapturePreviewAsync(CoreWebView2CapturePreviewImageFormat.Png,image);
+        testLog.WriteLine("PASS 8192 native DAT, edited PNG and merged PNG/JSON saves");
+    }
+
     private async Task RunSelfTest() {
-        testLog.WriteLine("Sprite Check 1.7.1 native WinForms/WebView2 runtime " + web.CoreWebView2.Environment.BrowserVersionString);
+        testLog.WriteLine("Sprite Check 1.7.2 native WinForms/WebView2 runtime " + web.CoreWebView2.Environment.BrowserVersionString);
         await web.CoreWebView2.ExecuteScriptAsync("document.getElementById('fileMenuButton').click();document.getElementById('menuUpdate').click()");
         for (int n = 0; n < 250 && await web.CoreWebView2.ExecuteScriptAsync("document.getElementById('updateStatus').dataset.state==='checking'") == "true"; n++) await Task.Delay(100);
-        await Check("File Update works in an empty scene with no newer published release", "document.getElementById('updateDialog').open && document.getElementById('updateCurrent').textContent==='1.7.1' && /^[0-9]+[.][0-9]+[.][0-9]+$/.test(document.getElementById('updateLatest').textContent) && document.getElementById('updateStatus').dataset.state==='current' && document.getElementById('updateInstall').hidden && spriteCheck.project===null");
+        await Check("File Update works in an empty scene with no newer published release", "document.getElementById('updateDialog').open && document.getElementById('updateCurrent').textContent==='1.7.2' && /^[0-9]+[.][0-9]+[.][0-9]+$/.test(document.getElementById('updateLatest').textContent) && document.getElementById('updateStatus').dataset.state==='current' && document.getElementById('updateInstall').hidden && spriteCheck.project===null");
         await Check("Native Update dialog text is at least 12px", "[...document.querySelectorAll('#updateDialog *')].filter(e=>e.getClientRects().length&&e.textContent.trim()).every(e=>parseFloat(getComputedStyle(e).fontSize)>=12)");
         using (var updateImage = File.Create(Path.Combine(testDirectory, "native-update-current.png"))) await web.CoreWebView2.CapturePreviewAsync(CoreWebView2CapturePreviewImageFormat.Png, updateImage);
         await web.CoreWebView2.ExecuteScriptAsync("document.getElementById('updateClose').click()");
@@ -440,6 +471,7 @@ internal sealed class SpriteCheckWindow : Form {
         await Task.Delay(200);
         await Check("Full-sheet Compare and measured log", "spriteCheck.compare.left.mode==='sheet' && spriteCheck.compare.right.mode==='sheet' && document.getElementById('compareLogState').textContent==='MEASURED EXPORT' && document.getElementById('compareLogRows').rows[4].cells[2].textContent==='107'");
         using (var sheets = File.Create(Path.Combine(testDirectory, "native-sheets.png"))) await web.CoreWebView2.CapturePreviewAsync(CoreWebView2CapturePreviewImageFormat.Png, sheets);
+        if(args.Contains("--test-8192"))await CheckLargeSheet();
         testLog.WriteLine("PASS ALL native smoke checks");
     }
 }
