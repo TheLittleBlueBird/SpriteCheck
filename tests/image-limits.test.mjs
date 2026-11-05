@@ -6,6 +6,7 @@ import {assertImageSize,MAX_IMAGE_SIDE,MAX_IMAGE_PIXELS,fitImportGrid} from '../
 import {encodePNG,decodePNG} from '../png.mjs';
 import {sliceSheet,mergeSheet} from '../core.mjs';
 import {PaintEditor} from '../paint-editor.mjs';
+import {detectUniformGrid} from '../grid-detect.mjs';
 test('8192 dimensions are inclusive on both axes, with clear validation before allocation',async()=>{
  assert.equal(MAX_IMAGE_SIDE,8192);assert.equal(MAX_IMAGE_PIXELS,67108864);
  for(const [w,h] of [[1,1],[8192,1],[1,8192],[8192,8192],[8192,4096]])assert.doesNotThrow(()=>assertImageSize(w,h));
@@ -33,6 +34,7 @@ test('A real 8192x8192 PNG roundtrip preserves all 268435456 RGBA bytes',{timeou
  const digest=b=>createHash('sha256').update(b).digest('hex'),expected=digest(data);
  const encoded=await encodePNG({width,height,data}),decoded=await decodePNG(encoded);
  assert.equal(decoded.width,width);assert.equal(decoded.height,height);assert.equal(digest(decoded.data),expected);
+ const detected=detectUniformGrid(decoded,{cellWidth:105,cellHeight:115});assert.ok(detected.candidates.every(c=>c.columns*c.rows<=4096));assert.equal(digest(decoded.data),expected);
 });
 test('Merge can produce a full 8192x8192 sheet with exact corner frames',{timeout:180000},()=>{
  const frames=Array.from({length:4},(_,id)=>{const data=new Uint8ClampedArray(4096*4096*4);data.set([10+id,30,40,255]);return {id,row:Math.floor(id/2),column:id%2,data};});

@@ -1,0 +1,7 @@
+.frame-edit-tools{display:flex;align-items:center;gap:7px;flex-wrap:wrap;flex-basis:100%;min-width:0}
+.frame-edit-tools button{font-size:12px;min-height:28px;padding:4px 8px;display:inline-flex;align-items:center;gap:5px}
+.frame-edit-tools svg{width:16px;height:16px;flex:none}.frame-edit-tools .danger{color:var(--pink)}
+#frameEditStatus{flex:1;min-width:60px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;color:var(--muted);line-height:1.5}#reviewGrid{margin-left:auto;color:var(--mint)}
+#gridDetectDialog{width:min(780px,95vw);max-height:90vh;overflow:auto}#gridDetectDialog p{font-size:13px;line-height:1.7}#gridDetectCandidates{width:100%;font-size:13px}
+.grid-detect-inputs{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin:12px 0}.grid-detect-inputs label{font-size:13px;display:flex;align-items:center;gap:6px}.grid-detect-inputs input{width:80px;font-size:13px}#gridDetectCellSize{font-size:13px;color:var(--mint)}
+.grid-detect-preview{width:100%;max-height:340px;overflow:auto;text-align:center;border:1px solid var(--line)}#gridDetectCanvas{display:block;max-width:100%;max-height:338px;margin:auto;object-fit:contain;image-rendering:pixelated}#gridDetectError{color:var(--pink)}

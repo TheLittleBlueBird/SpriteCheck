@@ -12,8 +12,8 @@ using Microsoft.Web.WebView2.WinForms;
 
 [assembly: System.Reflection.AssemblyTitle("Sprite Check")]
 [assembly: System.Reflection.AssemblyProduct("Sprite Check")]
-[assembly: System.Reflection.AssemblyVersion("1.7.2.0")]
-[assembly: System.Reflection.AssemblyFileVersion("1.7.2.0")]
+[assembly: System.Reflection.AssemblyVersion("1.8.0.0")]
+[assembly: System.Reflection.AssemblyFileVersion("1.8.0.0")]
 
 internal static class Program {
     [STAThread]
@@ -43,7 +43,7 @@ internal sealed class SpriteCheckWindow : Form {
     public SpriteCheckWindow(string[] arguments) {
         args = arguments;
         selfTest = args.Contains("--self-test");
-        Text = "Sprite Check 1.7.2";
+        Text = "Sprite Check 1.8.0";
         BackColor = Color.FromArgb(11, 13, 23);
         StartPosition = FormStartPosition.CenterScreen;
         var available = Screen.PrimaryScreen.WorkingArea;
@@ -81,7 +81,7 @@ internal sealed class SpriteCheckWindow : Form {
             core.Settings.IsZoomControlEnabled = false;
             core.Settings.IsPasswordAutosaveEnabled = false;
             core.Settings.IsGeneralAutofillEnabled = false;
-            await core.AddScriptToExecuteOnDocumentCreatedAsync("window.spriteCheckDesktop = {version:'1.7.2'};");
+            await core.AddScriptToExecuteOnDocumentCreatedAsync("window.spriteCheckDesktop = {version:'1.8.0'};");
             core.NewWindowRequested += (sender, e) => { e.Handled = true; };
             core.PermissionRequested += (sender, e) => { e.State = CoreWebView2PermissionState.Deny; };
             core.NavigationStarting += (sender, e) => {
@@ -346,6 +346,9 @@ internal sealed class SpriteCheckWindow : Form {
         ClientSize=new Size(1440,940);await Task.Delay(200);
         await OpenFile(Path.Combine(testDirectory,"large-8192.png"));
         await Check("8192 PNG opens with usable auto grid and full source canvas", "spriteCheck.project.sheet.image.width===8192 && spriteCheck.project.sheet.image.height===8192 && spriteCheck.project.sheet.cells.length<=4096 && document.getElementById('sheetCanvas').width===8192 && document.getElementById('sourceDimensions').textContent==='8192 × 8192 px'");
+        await web.CoreWebView2.ExecuteScriptAsync("document.getElementById('detect').click()");
+        for(int n=0;n<1200&&(await web.CoreWebView2.ExecuteScriptAsync("!!spriteCheck.project.detection&&!document.body.classList.contains('busy')"))!="true";n++)await Task.Delay(100);
+        await Check("Detect infers2048x2048 uniform cells in an8192 PNG", "spriteCheck.project.sheet.grid.cellWidth===2048 && spriteCheck.project.sheet.grid.cellHeight===2048 && spriteCheck.project.sheet.frames.length===16");
         await web.CoreWebView2.ExecuteScriptAsync("window.__largeFit=document.getElementById('sheetCanvas').clientWidth;document.getElementById('zoomOut').click()");
         await Check("8192 Sheet zoom out shrinks the fitted image", "document.getElementById('sheetCanvas').clientWidth<__largeFit");
         await web.CoreWebView2.ExecuteScriptAsync("document.getElementById('zoomFit').click();document.getElementById('openGrid').click();for(const id of ['cellWidth','cellHeight'])document.getElementById(id).value='2048';document.getElementById('gridForm').dispatchEvent(new Event('submit',{bubbles:true,cancelable:true}));document.getElementById('paintTab').click();document.getElementById('paintFit').click()");
@@ -373,11 +376,61 @@ internal sealed class SpriteCheckWindow : Form {
         testLog.WriteLine("PASS 8192 native DAT, edited PNG and merged PNG/JSON saves");
     }
 
+    private async Task CheckFrameDeleteAndGrid() {
+        ClientSize=new Size(1440,940);await Task.Delay(150);
+        await web.CoreWebView2.ExecuteScriptAsync(@"window.__pickSource=id=>{document.getElementById('sheetTab').click();document.getElementById('viewOriginal').click();const p=spriteCheck.project,f=p.sheet.frames[id],c=document.getElementById('sheetCanvas'),r=c.getBoundingClientRect();c.focus();c.dispatchEvent(new MouseEvent('click',{clientX:r.left+(f.x+p.sheet.grid.cellWidth/2)*r.width/c.width,clientY:r.top+(f.y+p.sheet.grid.cellHeight/2)*r.height/c.height,bubbles:true}));};__pickSource(2);{const f=spriteCheck.project.sheet.frames[2];window.__deletedData=f.data.slice();let i=0;while(!f.data[i+3])i+=4;window.__deletedPoint={x:f.x+(i/4)%105,y:f.y+Math.floor(i/4/105)};}document.getElementById('removeFrame').click();");
+        await Check("Remove Frame changes Idle12 to11 and clears only its edited cell", "spriteCheck.project.draft[0].keys.length===11 && !spriteCheck.project.draft[0].keys.some(k=>k.sourceId===2) && spriteCheck.project.sheet.frames.length===116 && spriteCheck.project.sheet.frames[2].data.every((v,i)=>v===__deletedData[i]) && document.getElementById('sheetCanvas').getContext('2d').getImageData(__deletedPoint.x,__deletedPoint.y,1,1).data[3]===0 && document.getElementById('viewOriginal').textContent==='Edited sheet'");
+        using(var image=File.Create(Path.Combine(testDirectory,"native-remove-frame-controls.png")))await web.CoreWebView2.CapturePreviewAsync(CoreWebView2CapturePreviewImageFormat.Png,image);
+        await web.CoreWebView2.ExecuteScriptAsync("document.getElementById('exportName').value='frame-one-removed';document.getElementById('paintExport').click()");
+        await WaitForSaved("frame-one-removed-edited.png");
+        await web.CoreWebView2.ExecuteScriptAsync("document.getElementById('sheetCanvas').dispatchEvent(new KeyboardEvent('keydown',{code:'KeyZ',key:'z',ctrlKey:true,bubbles:true,cancelable:true}))");
+        await Check("Frame deletion CtrlZ restores image and exact12-key order", "spriteCheck.project.draft[0].keys.length===12 && spriteCheck.project.draft[0].keys.every((k,i)=>k.sourceId===i) && document.getElementById('sheetCanvas').getContext('2d').getImageData(__deletedPoint.x,__deletedPoint.y,1,1).data[3]>0");
+        await web.CoreWebView2.ExecuteScriptAsync("document.getElementById('sheetCanvas').dispatchEvent(new KeyboardEvent('keydown',{code:'KeyY',key:'y',ctrlKey:true,bubbles:true,cancelable:true}));__pickSource(0);document.getElementById('removeFrame').click();document.getElementById('duplicateKey').click();document.getElementById('removeFrame').click()");
+        await Check("Removing a repeated key preserves its remaining source and other rows", "spriteCheck.project.draft[0].keys.length===10 && spriteCheck.project.draft[0].keys.filter(k=>k.sourceId===1).length===1 && spriteCheck.project.draft[1].keys.length===12 && spriteCheck.project.sheet.frames[1].data.some(v=>v>0)");
+        await web.CoreWebView2.ExecuteScriptAsync("document.getElementById('exportName').value='frame-two-removed';document.getElementById('saveProject').click()");
+        await WaitForSaved("frame-two-removed.dat");await OpenFile(Path.Combine(testDirectory,"frame-two-removed.dat"));
+        await Check("DAT retains deleted keys while keeping116 original sources", "spriteCheck.project.draft[0].keys.length===10 && !spriteCheck.project.draft[0].keys.some(k=>k.sourceId===0||k.sourceId===2) && spriteCheck.project.sheet.frames.length===116 && !spriteCheck.project.hasPixelEdits && spriteCheck.project.undoStack.length===0");
+        await web.CoreWebView2.ExecuteScriptAsync("window.__deletedDraft=JSON.stringify(spriteCheck.project.draft);document.getElementById('detect').click()");
+        for(int n=0;n<300&&(await web.CoreWebView2.ExecuteScriptAsync("!document.body.classList.contains('busy')"))!="true";n++)await Task.Delay(100);
+        await web.CoreWebView2.ExecuteScriptAsync("document.getElementById('reviewGrid').click()");
+        await Check("Detect computes grid but protects edited timeline from reslicing", "JSON.stringify(spriteCheck.project.draft)===__deletedDraft && document.getElementById('gridDetectDialog').open && document.getElementById('gridDetectApply').disabled && document.getElementById('gridDetectCandidates').options.length>0");
+        using(var image=File.Create(Path.Combine(testDirectory,"native-grid-protected.png")))await web.CoreWebView2.CapturePreviewAsync(CoreWebView2CapturePreviewImageFormat.Png,image);
+        await web.CoreWebView2.ExecuteScriptAsync("document.getElementById('gridDetectClose').click();document.getElementById('compareTab').click();document.getElementById('compareOriginalMode').value='sheet';document.getElementById('compareOriginalMode').dispatchEvent(new Event('change',{bubbles:true}));document.getElementById('compareMergedMode').value='sheet';document.getElementById('compareMergedMode').dispatchEvent(new Event('change',{bubbles:true}));");
+        await Check("Compare shows removed cells only in edited sheet before Merge", "document.getElementById('compareOriginal').toDataURL()!==document.getElementById('compareMerged').toDataURL() && !spriteCheck.project.merged && spriteCheck.project.draft[0].keys.length===10");
+        await web.CoreWebView2.ExecuteScriptAsync("__pickSource(2);document.getElementById('restoreFrame').click();document.getElementById('exportName').value='frame-restored';document.getElementById('confirm').click();document.getElementById('merge').click()");
+        for(int n=0;n<300&&(await web.CoreWebView2.ExecuteScriptAsync("!!spriteCheck.project.merged&&!document.body.classList.contains('busy')"))!="true";n++)await Task.Delay(100);
+        await Check("Restore Frame and Merge omit only the remaining removed source", "spriteCheck.project.draft[0].keys.length===11 && spriteCheck.project.draft[0].keys.at(-1).sourceId===2 && !spriteCheck.project.merged.sourceToFrame.has(0) && spriteCheck.project.merged.sourceToFrame.has(2) && spriteCheck.project.merged.manifest.animations[0].totalTicks===11");
+        await web.CoreWebView2.ExecuteScriptAsync("document.getElementById('export').click();document.getElementById('downloadBoth').click()");
+        await WaitForSaved("frame-restored-merged.png");await WaitForSaved("frame-restored-merged.json");
+        await web.CoreWebView2.ExecuteScriptAsync("document.getElementById('exportDialog').close();document.getElementById('compareTab').click()");
+        using(var image=File.Create(Path.Combine(testDirectory,"native-frame-removed.png")))await web.CoreWebView2.CapturePreviewAsync(CoreWebView2CapturePreviewImageFormat.Png,image);
+        await web.CoreWebView2.ExecuteScriptAsync("__pickSource(spriteCheck.project.draft[0].keys[0].sourceId);{const count=spriteCheck.project.draft[0].keys.length;for(let i=0;i<count;i++)document.getElementById('removeFrame').click();}document.getElementById('play').click()");
+        await Check("Removing all row frames leaves an empty playable-safe row with Restore", "spriteCheck.project.draft[0].keys.length===0 && !spriteCheck.playing && document.getElementById('removeFrame').disabled && !document.getElementById('restoreFrame').disabled && spriteCheck.project.sheet.frames.length===116");
+        await web.CoreWebView2.ExecuteScriptAsync("document.getElementById('sheetCanvas').dispatchEvent(new KeyboardEvent('keydown',{code:'KeyZ',key:'z',ctrlKey:true,bubbles:true,cancelable:true}))");
+        await Check("Undo empty-row deletion selects a usable restored frame", "spriteCheck.project.draft[0].keys.length===1 && !document.getElementById('removeFrame').disabled && document.getElementById('selectedLabel').textContent==='KEY 01'");
+        await OpenFile(Path.Combine(testDirectory,"auto-grid-640.png"));
+        await web.CoreWebView2.ExecuteScriptAsync("document.getElementById('detect').click()");
+        for(int n=0;n<300&&(await web.CoreWebView2.ExecuteScriptAsync("!!spriteCheck.project.detection&&!document.body.classList.contains('busy')"))!="true";n++)await Task.Delay(100);
+        await Check("Detect infers128x128 cells and5x3 uniform grid from image content", "spriteCheck.project.sheet.grid.cellWidth===128 && spriteCheck.project.sheet.grid.cellHeight===128 && spriteCheck.project.sheet.grid.columns===5 && spriteCheck.project.sheet.grid.rows===3 && spriteCheck.project.sheet.frames.length===15 && spriteCheck.project.detection.unique===15");
+        await web.CoreWebView2.ExecuteScriptAsync("document.getElementById('reviewGrid').click()");
+        await Check("Auto Grid review displays candidates and exact equal-cell preview", "document.getElementById('gridDetectDialog').open && document.getElementById('gridDetectColumns').value==='5' && document.getElementById('gridDetectRows').value==='3' && document.getElementById('gridDetectCanvas').width===640 && document.getElementById('gridDetectCanvas').height===384 && !document.getElementById('gridDetectApply').disabled");
+        using(var image=File.Create(Path.Combine(testDirectory,"native-auto-grid.png")))await web.CoreWebView2.CapturePreviewAsync(CoreWebView2CapturePreviewImageFormat.Png,image);
+        await web.CoreWebView2.ExecuteScriptAsync("document.getElementById('gridDetectColumns').value='3';document.getElementById('gridDetectColumns').dispatchEvent(new Event('input',{bubbles:true}))");
+        await Check("Grid review rejects counts that cannot divide image dimensions equally", "document.getElementById('gridDetectApply').disabled && document.getElementById('gridDetectError').textContent.length>0 && spriteCheck.project.sheet.grid.columns===5");
+        await web.CoreWebView2.ExecuteScriptAsync("document.getElementById('gridDetectColumns').value='4';document.getElementById('gridDetectColumns').dispatchEvent(new Event('input',{bubbles:true}));document.getElementById('gridDetectApply').click();document.getElementById('detect').click()");
+        for(int n=0;n<300&&(await web.CoreWebView2.ExecuteScriptAsync("!document.body.classList.contains('busy')"))!="true";n++)await Task.Delay(100);
+        await Check("A manually chosen grid is preserved on the next Detect", "spriteCheck.project.sheet.grid.cellWidth===160 && spriteCheck.project.sheet.grid.columns===4 && spriteCheck.project.sheet.grid.rows===3 && spriteCheck.project.sheet.frames.length===12");
+        await web.CoreWebView2.ExecuteScriptAsync("document.getElementById('paintTab').click();{const data=spriteCheck.project.sheet.frames[0].data.slice();data.set([11,22,33,255],0);spriteCheck.paint.onCommit(0,data);}document.getElementById('detect').click()");
+        for(int n=0;n<300&&(await web.CoreWebView2.ExecuteScriptAsync("!document.body.classList.contains('busy')"))!="true";n++)await Task.Delay(100);
+        await Check("Detect after painting retains grid, pixels and undo history", "spriteCheck.project.hasPixelEdits && spriteCheck.project.sheet.grid.cellWidth===160 && spriteCheck.project.sheet.frames[0].data[0]===11 && spriteCheck.project.undoStack.length===1");
+        await OpenFile(Path.Combine(root,"app","assets","test-sheet.png"));
+    }
+
     private async Task RunSelfTest() {
-        testLog.WriteLine("Sprite Check 1.7.2 native WinForms/WebView2 runtime " + web.CoreWebView2.Environment.BrowserVersionString);
+        testLog.WriteLine("Sprite Check 1.8.0 native WinForms/WebView2 runtime " + web.CoreWebView2.Environment.BrowserVersionString);
         await web.CoreWebView2.ExecuteScriptAsync("document.getElementById('fileMenuButton').click();document.getElementById('menuUpdate').click()");
         for (int n = 0; n < 250 && await web.CoreWebView2.ExecuteScriptAsync("document.getElementById('updateStatus').dataset.state==='checking'") == "true"; n++) await Task.Delay(100);
-        await Check("File Update works in an empty scene with no newer published release", "document.getElementById('updateDialog').open && document.getElementById('updateCurrent').textContent==='1.7.2' && /^[0-9]+[.][0-9]+[.][0-9]+$/.test(document.getElementById('updateLatest').textContent) && document.getElementById('updateStatus').dataset.state==='current' && document.getElementById('updateInstall').hidden && spriteCheck.project===null");
+        await Check("File Update works in an empty scene with no newer published release", "document.getElementById('updateDialog').open && document.getElementById('updateCurrent').textContent==='1.8.0' && /^[0-9]+[.][0-9]+[.][0-9]+$/.test(document.getElementById('updateLatest').textContent) && document.getElementById('updateStatus').dataset.state==='current' && document.getElementById('updateInstall').hidden && spriteCheck.project===null");
         await Check("Native Update dialog text is at least 12px", "[...document.querySelectorAll('#updateDialog *')].filter(e=>e.getClientRects().length&&e.textContent.trim()).every(e=>parseFloat(getComputedStyle(e).fontSize)>=12)");
         using (var updateImage = File.Create(Path.Combine(testDirectory, "native-update-current.png"))) await web.CoreWebView2.CapturePreviewAsync(CoreWebView2CapturePreviewImageFormat.Png, updateImage);
         await web.CoreWebView2.ExecuteScriptAsync("document.getElementById('updateClose').click()");
@@ -471,6 +524,7 @@ internal sealed class SpriteCheckWindow : Form {
         await Task.Delay(200);
         await Check("Full-sheet Compare and measured log", "spriteCheck.compare.left.mode==='sheet' && spriteCheck.compare.right.mode==='sheet' && document.getElementById('compareLogState').textContent==='MEASURED EXPORT' && document.getElementById('compareLogRows').rows[4].cells[2].textContent==='107'");
         using (var sheets = File.Create(Path.Combine(testDirectory, "native-sheets.png"))) await web.CoreWebView2.CapturePreviewAsync(CoreWebView2CapturePreviewImageFormat.Png, sheets);
+        if(args.Contains("--test-frame-grid"))await CheckFrameDeleteAndGrid();
         if(args.Contains("--test-8192"))await CheckLargeSheet();
         testLog.WriteLine("PASS ALL native smoke checks");
     }

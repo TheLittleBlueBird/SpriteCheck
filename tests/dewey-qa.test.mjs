@@ -28,7 +28,7 @@ function line(name){return source.match(new RegExp(`^function ${name}\\(.*$`,'m'
 function block(start,end){return source.slice(source.indexOf(start),source.indexOf(end));}
 function harness(project){
   const controls=new Map();
-  const context={project,row:0,selectedKey:0,selectedSource:0,mode:'edited',sheetMode:'original',tab:'sheet',seconds:0,
+  const context={project,gridDetector:{clear(){},dialog:{close(){}}},gridManual:false,gridResult:null,gridResultImage:null,row:0,selectedKey:0,selectedSource:0,mode:'edited',sheetMode:'original',tab:'sheet',seconds:0,
     playing:false,zoom:null,pngExport:null,sourceName:'dewey.png',sourcePNG:png,sourceBytes:png.length,
     rawImage:image,grid,loadToken:0,frameCanvases:new Map(),mergedCanvases:new Map(),
     clone,ticks,frameAtSeconds,encodePNG,decodeProject,render(){},toast(){},

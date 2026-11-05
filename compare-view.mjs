@@ -1,5 +1,6 @@
 import {ticks,frameAtSeconds} from './core.mjs';
 import {compareSettings,comparisonMetrics,byteSize} from './compare-model.mjs';
+import {excludedSources} from './frame-edit.mjs';
 
 export class CompareView{
  constructor(){
@@ -41,9 +42,9 @@ export class CompareView{
  link(panel){if(this.settings.linked)this.settings[panel.side==='left'?'right':'left']={...this.settings[panel.side]};}
  zoomBy(panel,factor,point={x:0,y:0}){const s=this.settings[panel.side],old=s.zoom;s.zoom=Math.max(.125,Math.min(64,s.zoom*factor));const ratio=s.zoom/old;s.x=point.x-(point.x-s.x)*ratio;s.y=point.y-(point.y-s.y)*ratio;this.link(panel);this.redraw();}
  reset(panel,actual){const s=this.settings[panel.side];s.zoom=actual?Math.max(.125,Math.min(64,1/(this.states[panel.side]?.fit||1))):1;s.x=0;s.y=0;this.link(panel);this.redraw();}
- bitmap(image){let c=this.cache.get(image);if(!c){c=document.createElement('canvas');c.width=image.width;c.height=image.height;c.getContext('2d').putImageData(new ImageData(image.data,image.width,image.height),0,0);this.cache.set(image,c);}return c;}
+ bitmap(image,key=image,excluded=[]){let c=this.cache.get(key);if(!c){c=document.createElement('canvas');c.width=image.width;c.height=image.height;const ctx=c.getContext('2d');ctx.putImageData(new ImageData(image.data,image.width,image.height),0,0);for(const f of excluded)ctx.clearRect(f.x,f.y,this.project.sheet.grid.cellWidth,this.project.sheet.grid.cellHeight);this.cache.set(key,c);}return c;}
  update(project,frameCanvas,sourceBytes,packedBytes,jsonBytes){
-  this.project=project;this.frameCanvas=frameCanvas;this.last.row=Math.min(this.last.row,project.sheet.original.length-1);
+  this.project=project;this.frameCanvas=frameCanvas;this.excluded=excludedSources(project.sheet,project.draft);this.last.row=Math.min(this.last.row,project.sheet.original.length-1);
   const m=comparisonMetrics(project,sourceBytes,packedBytes,jsonBytes),o=m.original,n=m.merged;
   document.getElementById('compareRightTitle').textContent=n?'● AFTER MERGE':'● EDITED PREVIEW';
   document.getElementById('compareRightFooter').textContent=n?'Confirmed edits · packed image references':'Preview current edits · Merge to create a packed sheet';
@@ -69,7 +70,7 @@ export class CompareView{
    const animation=i?right:o,current=frameAtSeconds(animation,seconds,loop),sourceId=current?.key.sourceId,s=this.settings[panel.side];
    let image=null,rect=null;
    if(s.mode==='sheet'){
-    const sheet=i?(m??(p.hasPixelEdits?p.sheet.image:null)):(p.originalSheet??p.sheet).image;if(sheet){image=this.bitmap(sheet);rect=i&&m?m.frames[sourceId]:p.sheet.frames[sourceId];}
+    const sheet=i?(m??(p.hasPixelEdits||this.excluded.length?p.sheet.image:null)):(p.originalSheet??p.sheet).image;if(sheet){image=this.bitmap(sheet,i&&!m?p.draft:sheet,i&&!m?this.excluded:[]);rect=i&&m?m.frames[sourceId]:p.sheet.frames[sourceId];}
    }else if(sourceId!=null)image=this.frameCanvas(sourceId,!!(i&&m),!i);
    const w=Math.max(1,panel.stage.clientWidth),h=Math.max(1,panel.stage.clientHeight),dpr=Math.min(2,window.devicePixelRatio||1),c=panel.canvas;
    if(c.width!==Math.round(w*dpr)||c.height!==Math.round(h*dpr)){c.width=Math.round(w*dpr);c.height=Math.round(h*dpr);}
