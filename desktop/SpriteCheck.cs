@@ -12,8 +12,8 @@ using Microsoft.Web.WebView2.WinForms;
 
 [assembly: System.Reflection.AssemblyTitle("Sprite Check")]
 [assembly: System.Reflection.AssemblyProduct("Sprite Check")]
-[assembly: System.Reflection.AssemblyVersion("1.8.0.0")]
-[assembly: System.Reflection.AssemblyFileVersion("1.8.0.0")]
+[assembly: System.Reflection.AssemblyVersion("1.8.2.0")]
+[assembly: System.Reflection.AssemblyFileVersion("1.8.2.0")]
 
 internal static class Program {
     [STAThread]
@@ -43,7 +43,7 @@ internal sealed class SpriteCheckWindow : Form {
     public SpriteCheckWindow(string[] arguments) {
         args = arguments;
         selfTest = args.Contains("--self-test");
-        Text = "Sprite Check 1.8.0";
+        Text = "Sprite Check 1.8.2";
         BackColor = Color.FromArgb(11, 13, 23);
         StartPosition = FormStartPosition.CenterScreen;
         var available = Screen.PrimaryScreen.WorkingArea;
@@ -81,7 +81,7 @@ internal sealed class SpriteCheckWindow : Form {
             core.Settings.IsZoomControlEnabled = false;
             core.Settings.IsPasswordAutosaveEnabled = false;
             core.Settings.IsGeneralAutofillEnabled = false;
-            await core.AddScriptToExecuteOnDocumentCreatedAsync("window.spriteCheckDesktop = {version:'1.8.0'};");
+            await core.AddScriptToExecuteOnDocumentCreatedAsync("window.spriteCheckDesktop = {version:'1.8.2'};");
             core.NewWindowRequested += (sender, e) => { e.Handled = true; };
             core.PermissionRequested += (sender, e) => { e.State = CoreWebView2PermissionState.Deny; };
             core.NavigationStarting += (sender, e) => {
@@ -426,11 +426,52 @@ internal sealed class SpriteCheckWindow : Form {
         await OpenFile(Path.Combine(root,"app","assets","test-sheet.png"));
     }
 
+    private async Task CheckTimelineDrag() {
+        await OpenFile(Path.Combine(root,"app","assets","test-sheet.png"));
+        await web.CoreWebView2.ExecuteScriptAsync(File.ReadAllText(Path.Combine(testDirectory,"timeline-native.js")));
+        for(int n=0;n<600&&(await web.CoreWebView2.ExecuteScriptAsync("window.__timelineChecks?.done===true"))!="true";n++)await Task.Delay(100);
+        string report=await web.CoreWebView2.ExecuteScriptAsync("window.__timelineChecks");
+        File.WriteAllText(Path.Combine(testDirectory,"timeline-dom-results.json"),report);
+        await Check("Timeline pointer test completes without error", "window.__timelineChecks?.done===true && !window.__timelineChecks.error");
+        var checks=json.Deserialize<Dictionary<string,object>>(report);
+        foreach(object description in (System.Collections.IEnumerable)checks["checks"])testLog.WriteLine("PASS Timeline " + description);
+        using(var image=File.Create(Path.Combine(testDirectory,"native-timeline-moved.png")))await web.CoreWebView2.CapturePreviewAsync(CoreWebView2CapturePreviewImageFormat.Png,image);
+        await web.CoreWebView2.ExecuteScriptAsync("__showTimelineInsertion()");
+        await Check("Native drag displays a visible insertion marker", "!!document.querySelector('.key-drop-marker:not([hidden])') && !!document.querySelector('.key-dragging') && document.getElementById('timelineDragHint').textContent.includes('MOVE KEY')");
+        using(var image=File.Create(Path.Combine(testDirectory,"native-timeline-insertion.png")))await web.CoreWebView2.CapturePreviewAsync(CoreWebView2CapturePreviewImageFormat.Png,image);
+        await web.CoreWebView2.ExecuteScriptAsync("document.body.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',code:'Escape',bubbles:true,cancelable:true}))");
+        await web.CoreWebView2.ExecuteScriptAsync("document.getElementById('saveProject').click()");await WaitForSaved("timeline-moved.dat");
+        await OpenFile(Path.Combine(testDirectory,"timeline-moved.dat"));
+        await Check("Timeline DAT reopens exact order, holds, view and immutable original", "JSON.stringify(spriteCheck.project.draft)===JSON.stringify(__timelineChecks.expected) && JSON.stringify(spriteCheck.project.sheet.original)===JSON.stringify(__timelineChecks.original) && spriteCheck.mode==='edited' && spriteCheck.project.undoStack.length===0");
+        await web.CoreWebView2.ExecuteScriptAsync("document.getElementById('confirm').click();document.getElementById('merge').click()");
+        for(int n=0;n<300&&(await web.CoreWebView2.ExecuteScriptAsync("!!spriteCheck.project.merged&&!document.body.classList.contains('busy')"))!="true";n++)await Task.Delay(100);
+        await Check("Merge retains reordered playback duration, FPS and Loop", "spriteCheck.project.merged.manifest.animations.every((a,i)=>a.totalTicks===__timelineChecks.expected[i].keys.reduce((n,k)=>n+k.ticks,0)&&a.fps===__timelineChecks.expected[i].fps&&a.loop===__timelineChecks.expected[i].loop)");
+        await web.CoreWebView2.ExecuteScriptAsync("document.getElementById('export').click();document.getElementById('downloadBoth').click()");
+        await WaitForSaved("timeline-moved-merged.png");await WaitForSaved("timeline-moved-merged.json");
+        await web.CoreWebView2.ExecuteScriptAsync("document.getElementById('exportDialog').close();document.getElementById('compareTab').click()");
+        using(var image=File.Create(Path.Combine(testDirectory,"native-timeline-compare.png")))await web.CoreWebView2.CapturePreviewAsync(CoreWebView2CapturePreviewImageFormat.Png,image);
+    }
+
+    private async Task CheckArrowSelection() {
+        await OpenFile(Path.Combine(root,"app","assets","test-sheet.png"));
+        await web.CoreWebView2.ExecuteScriptAsync(File.ReadAllText(Path.Combine(testDirectory,"arrow-native.js")));
+        for(int n=0;n<600&&(await web.CoreWebView2.ExecuteScriptAsync("window.__arrowChecks?.done===true"))!="true";n++)await Task.Delay(100);
+        string report=await web.CoreWebView2.ExecuteScriptAsync("window.__arrowChecks");
+        File.WriteAllText(Path.Combine(testDirectory,"arrow-dom-results.json"),report);
+        await Check("Arrow selection tests complete without error", "window.__arrowChecks?.done===true&&!window.__arrowChecks.error");
+        var checks=json.Deserialize<Dictionary<string,object>>(report);
+        foreach(object description in (System.Collections.IEnumerable)checks["checks"])testLog.WriteLine("PASS Arrow " + description);
+        using(var image=File.Create(Path.Combine(testDirectory,"native-arrow-selection.png")))await web.CoreWebView2.CapturePreviewAsync(CoreWebView2CapturePreviewImageFormat.Png,image);
+        await web.CoreWebView2.ExecuteScriptAsync("document.getElementById('exportName').value='arrow-selection';document.getElementById('saveProject').click()");
+        await WaitForSaved("arrow-selection.dat");await OpenFile(Path.Combine(testDirectory,"arrow-selection.dat"));
+        await Check("Arrow-selected frame and exact time survive native DAT reopening", "JSON.stringify(spriteCheck.project.draft)===JSON.stringify(__arrowChecks.draft)&&Number(document.getElementById('sourceFrame').value)===__arrowChecks.finalSource&&Number(document.querySelector('#keyframes .selected')?.dataset.index)===__arrowChecks.finalIndex&&Math.abs(spriteCheck.time-__arrowChecks.finalTime)<1e-7");
+    }
+
     private async Task RunSelfTest() {
-        testLog.WriteLine("Sprite Check 1.8.0 native WinForms/WebView2 runtime " + web.CoreWebView2.Environment.BrowserVersionString);
+        testLog.WriteLine("Sprite Check 1.8.2 native WinForms/WebView2 runtime " + web.CoreWebView2.Environment.BrowserVersionString);
         await web.CoreWebView2.ExecuteScriptAsync("document.getElementById('fileMenuButton').click();document.getElementById('menuUpdate').click()");
         for (int n = 0; n < 250 && await web.CoreWebView2.ExecuteScriptAsync("document.getElementById('updateStatus').dataset.state==='checking'") == "true"; n++) await Task.Delay(100);
-        await Check("File Update works in an empty scene with no newer published release", "document.getElementById('updateDialog').open && document.getElementById('updateCurrent').textContent==='1.8.0' && /^[0-9]+[.][0-9]+[.][0-9]+$/.test(document.getElementById('updateLatest').textContent) && document.getElementById('updateStatus').dataset.state==='current' && document.getElementById('updateInstall').hidden && spriteCheck.project===null");
+        await Check("File Update works in an empty scene with no newer published release", "document.getElementById('updateDialog').open && document.getElementById('updateCurrent').textContent==='1.8.2' && /^[0-9]+[.][0-9]+[.][0-9]+$/.test(document.getElementById('updateLatest').textContent) && document.getElementById('updateStatus').dataset.state==='current' && document.getElementById('updateInstall').hidden && spriteCheck.project===null");
         await Check("Native Update dialog text is at least 12px", "[...document.querySelectorAll('#updateDialog *')].filter(e=>e.getClientRects().length&&e.textContent.trim()).every(e=>parseFloat(getComputedStyle(e).fontSize)>=12)");
         using (var updateImage = File.Create(Path.Combine(testDirectory, "native-update-current.png"))) await web.CoreWebView2.CapturePreviewAsync(CoreWebView2CapturePreviewImageFormat.Png, updateImage);
         await web.CoreWebView2.ExecuteScriptAsync("document.getElementById('updateClose').click()");
@@ -526,6 +567,8 @@ internal sealed class SpriteCheckWindow : Form {
         using (var sheets = File.Create(Path.Combine(testDirectory, "native-sheets.png"))) await web.CoreWebView2.CapturePreviewAsync(CoreWebView2CapturePreviewImageFormat.Png, sheets);
         if(args.Contains("--test-frame-grid"))await CheckFrameDeleteAndGrid();
         if(args.Contains("--test-8192"))await CheckLargeSheet();
+        if(args.Contains("--test-timeline-move"))await CheckTimelineDrag();
+        if(args.Contains("--test-arrow-selection"))await CheckArrowSelection();
         testLog.WriteLine("PASS ALL native smoke checks");
     }
 }

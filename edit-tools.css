@@ -5,3 +5,13 @@
 #gridDetectDialog{width:min(780px,95vw);max-height:90vh;overflow:auto}#gridDetectDialog p{font-size:13px;line-height:1.7}#gridDetectCandidates{width:100%;font-size:13px}
 .grid-detect-inputs{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin:12px 0}.grid-detect-inputs label{font-size:13px;display:flex;align-items:center;gap:6px}.grid-detect-inputs input{width:80px;font-size:13px}#gridDetectCellSize{font-size:13px;color:var(--mint)}
 .grid-detect-preview{width:100%;max-height:340px;overflow:auto;text-align:center;border:1px solid var(--line)}#gridDetectCanvas{display:block;max-width:100%;max-height:338px;margin:auto;object-fit:contain;image-rendering:pixelated}#gridDetectError{color:var(--pink)}
+.keyframes{position:relative;overscroll-behavior-x:contain}
+.keyframes .key{cursor:grab;user-select:none;touch-action:none;-webkit-user-drag:none}
+.keyframes .key canvas{pointer-events:none}
+.keyframes[aria-readonly="true"] .key{cursor:pointer}
+.keyframes.timeline-dragging,.keyframes.timeline-dragging .key{cursor:grabbing}
+.keyframes .key-dragging{opacity:.45;border-color:var(--gold)}
+.key-drop-marker{position:absolute;top:0;bottom:6px;width:3px;background:var(--gold);box-shadow:0 0 7px #eec88c88;z-index:5;pointer-events:none}
+.key-drop-marker:before{content:'';position:absolute;top:0;left:-4px;border-left:5px solid transparent;border-right:5px solid transparent;border-top:7px solid var(--gold)}
+#timelineDragHint{font-size:12px;color:var(--muted);align-self:center}
+.timeline-dragging~*{user-select:none}

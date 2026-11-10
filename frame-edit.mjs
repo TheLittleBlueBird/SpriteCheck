@@ -7,3 +7,16 @@ export function timelineImage(sheet,animations){
  for(const f of excludedSources(sheet,animations))for(let y=0;y<h;y++){const start=((f.y+y)*image.width+f.x)*4;image.data.fill(0,start,start+w*4);}
  return image;
 }
+import {frameAtSeconds} from './core.mjs';
+
+// Playback keys may be packed aliases; selection always references source cells.
+export function selectionAtTime(project,row,mode,seconds,loop){
+ const keys=project?.draft[row]?.keys??[],animation=mode==='original'?project?.sheet.original[row]:project?.draft[row];
+ const hit=animation?frameAtSeconds(animation,seconds,loop):null;
+ if(!hit)return {keyIndex:-1,sourceId:null,timelineIndex:-1};
+ return {keyIndex:mode==='original'?keys.findIndex(k=>k.sourceId===hit.key.sourceId):hit.index,sourceId:hit.key.sourceId,timelineIndex:hit.index};
+}
+export function selectedTimelineIndex(project,row,mode,keyIndex,sourceId){
+ if(sourceId==null)return -1;
+ return mode==='original'?project.sheet.original[row].keys.findIndex(k=>k.sourceId===sourceId):project.draft[row].keys[keyIndex]?.sourceId===sourceId?keyIndex:-1;
+}

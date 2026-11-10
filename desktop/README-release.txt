@@ -1,8 +1,17 @@
-Sprite Check 1.8.0 - Windows x64 portable
+Sprite Check 1.8.2 - Windows x64 portable
 
 1. Extract the complete ZIP to a writable folder.
 2. Open Sprite Check.exe. No Node.js or local server is needed.
-   v1.8.0: REMOVE FRAME / RESTORE FRAME, shared50-step Undo/Redo.
+   v1.8.2: Left/Right arrows synchronize sheet, timeline, inspector and preview
+   selection while stepping one tick. First Frame and scrubber select too.
+   Offscreen selected cells/keys are revealed; holds retain the same key until
+   the next boundary. Navigation preserves Undo/Redo, pixels and merged results.
+   Drag timeline keys to reorder; a gold line marks the insertion slot.
+   Drop between cards or in blank end space; hold near an edge to scroll.
+   Esc or release outside cancels. Original playback: choose EDIT KEYS first.
+   Each move uses one Undo step; holds/FPS/Loop and source artwork are retained.
+   Moved key is selected and previewed. Save DAT / Confirm-Merge-Export retains order.
+   REMOVE FRAME / RESTORE FRAME, shared50-step Undo/Redo.
    Unused cells disappear from edited sheets; original pixels remain in DAT.
    DETECT suggests equal grid cells and checks duplicates. GRID REVIEW previews
    candidates; manual grids and existing edits are protected from reslicing.
