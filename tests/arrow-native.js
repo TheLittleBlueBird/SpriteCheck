@@ -36,7 +36,7 @@
   change('playbackMode','original');change('scrubber','2','input');
   check('Original can select a deleted source without highlighting the wrong edited key',selected()===2&&frameId()===2&&$('selectedLabel').textContent==='SOURCE FRAME'&&outlined(p().sheet.frames[2]));
   change('playbackMode','edited');$('confirm').click();$('merge').click();await wait(()=>p().merged&&!document.body.classList.contains('busy'));
-  document.querySelector('[data-row="8"]').click();change('playbackMode','merged');$('viewMerged').click();change('scrubber','6','input');
+  $('sheetTab').click();document.querySelector('[data-row="8"]').click();change('playbackMode','merged');$('viewMerged').click();change('scrubber','6','input');
   const alias=p().draft[8].keys[6].sourceId,packed=p().merged.frames[p().merged.sourceToFrame.get(alias)],merged=p().merged,undo=p().undoStack.length;
   check('Merged aliases select the logical source and its shared packed cell',selected()===6&&frameId()===alias&&packed.sourceId!==alias&&outlined(packed));
   $('compareTab').click();arrow(-1,document.body);

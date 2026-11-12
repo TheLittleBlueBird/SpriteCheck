@@ -29,9 +29,9 @@ export async function encodeProject({project,pngBytes,sourceName,view={}}){
  const png=bytes(pngBytes);if(!png.length||png.length>MAX_PNG)throw new Error('Source PNG must be at most 64 MiB.');
  const draft=animations(project.sheet,project.draft),confirmed=project.confirmed?animations(project.sheet,project.confirmed):null;
  const version=project.hasPixelEdits?2:1;
- const metadata={format:'sprite-check-project',version,appVersion:'1.8.2',sourceName:String(sourceName||'sprite.png').slice(0,255),
+ const metadata={format:'sprite-check-project',version,appVersion:'1.9.0',sourceName:String(sourceName||'sprite.png').slice(0,255),
   grid:Object.fromEntries(['cellWidth','cellHeight','offsetX','offsetY','gapX','gapY'].map(k=>[k,project.sheet.grid[k]])),
-  draft,confirmed,dirty:!!project.dirty,detected:!!project.detection,merged:!!project.merged,view:viewState(view)};
+  draft,confirmed,dirty:!!project.dirty,detected:!!project.detection,merged:!!project.merged,packing:project.merged&&project.packColumns?{columns:project.packColumns}:null,view:viewState(view)};
  const meta=encoder.encode(JSON.stringify(metadata));if(meta.length>MAX_META)throw new Error('Project timeline exceeds the .dat size limit.');
  const workingPNG=version===2?await encodePNG(project.sheet.image):new Uint8Array();
  if(png.length+workingPNG.length>MAX_PNG)throw new Error('Original and working PNGs together must be at most 64 MiB.');
@@ -54,7 +54,8 @@ export async function decodeProject(input){
  const view=viewState(meta.view);view.row=Math.min(view.row,sheet.original.length-1);view.selectedKey=Math.max(-1,Math.min(view.selectedKey,project.draft[view.row].keys.length-1));
  const selected=sheet.frames[view.selectedSource];view.selectedSource=project.draft[view.row].keys[view.selectedKey]?.sourceId??(selected?.row===view.row?selected.id:sheet.original[view.row].keys[0]?.sourceId??null);
  if(meta.detected)project.detect();
- if(meta.merged){if(!project.confirmed||project.dirty)fail();project.merge(view.scope,view.exportName);}
+ if(meta.packing!=null&&!meta.merged)fail();
+ if(meta.merged){if(!project.confirmed||project.dirty)fail();project.merge(view.scope,view.exportName);if(meta.packing!=null){if(!Number.isInteger(meta.packing.columns))fail();project.pack(meta.packing.columns);}}
  if(!project.merged){if(view.mode==='merged')view.mode='edited';view.sheetMode='original';}
  return {project,image,pngBytes,sourceName:meta.sourceName.slice(0,255),grid:clone(meta.grid),view};
 }

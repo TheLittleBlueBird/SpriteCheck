@@ -1,0 +1,64 @@
+// Isolated native DOM self-test. Folder dialogs are bypassed only by --self-test.
+(async()=>{
+ const report=window.__workflowChecks={done:false,checks:[],error:null,capture:null},$=id=>document.getElementById(id),p=()=>spriteCheck.project;
+ const check=(name,value)=>{if(!value)throw Error(name);report.checks.push(name);};
+ const wait=async predicate=>{for(let i=0;i<600;i++){if(predicate())return;await new Promise(r=>setTimeout(r,25));}throw Error('Timed out');};
+ const capture=async name=>{await new Promise(r=>setTimeout(r,100));report.capture=name;await wait(()=>window.__workflowCaptureAck===name);report.capture=null;};
+ const change=(id,value,event='change')=>{$(id).value=value;$(id).dispatchEvent(new Event(event,{bubbles:true}));};
+ const click=(index,modifiers={})=>$('keyframes').querySelector(`[data-index="${index}"]`).dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true,...modifiers}));
+ const selected=()=>[...$('keyframes').querySelectorAll('.selected')].map(c=>Number(c.dataset.index));
+ const timeline=()=>JSON.stringify(p().draft),history=()=>p().undoStack.length;
+ let exportPacket=null;window.chrome.webview.addEventListener('message',e=>{if(e.data?.kind==='export-result')exportPacket=e.data;});
+ const exportFiles=async(name,choices)=>{$('export').click();change('exportName',name,'input');for(const [id,value] of Object.entries(choices)){$(id).checked=value;$(id).dispatchEvent(new Event('change',{bubbles:true}));}if(name==='PackMonster'){$('exportSelected').scrollIntoView({block:'nearest'});await capture('native-workflow-export.png');const r=$('exportSelected').getBoundingClientRect();check('Export checkbox controls remain reachable in a compact window',r.top>=0&&r.bottom<=window.innerHeight&&getComputedStyle($('exportDialog')).overflowY==='auto');}exportPacket=null;$('exportSelected').click();await wait(()=>exportPacket&&!document.body.classList.contains('busy'));if(exportPacket.error)throw Error(exportPacket.message);return exportPacket;};
+ try{
+  $('sheetTab').click();click(11);change('holdTicks','3');click(8);click(11,{shiftKey:true});
+  check('All runtime element IDs are unique',new Set([...document.querySelectorAll('[id]')].map(e=>e.id)).size===document.querySelectorAll('[id]').length);
+  check('Shift click09–12 selects all four timeline keys',JSON.stringify(selected())==='[8,9,10,11]'&&$('selectionCount').textContent==='4 SELECTED');
+  const before=timeline(),holds=p().draft[0].keys.slice(8,12).map(k=>k.ticks),h=history();
+  click(9,{ctrlKey:true});check('Ctrl click toggles a single key within a range',JSON.stringify(selected())==='[8,10,11]');click(8);click(11,{shiftKey:true});
+  check('Selection does not change history or timing',timeline()===before&&history()===h);
+  $('duplicateKey').click();check('Duplicate multiple keys opens a placement chooser',$('duplicateDialog').open&&$('duplicateSummary').textContent.includes('4'));
+  change('duplicateInsertPosition','custom');change('duplicatePositionNumber','999','input');check('Invalid insertion positions disable Duplicate',$('duplicateConfirm').disabled);
+  change('duplicateInsertPosition','start');check('Visible duplicate selector and hidden custom field agree with placement',$('duplicateInsertPosition').tagName==='SELECT'&&$('duplicateInsertPosition').value==='start'&&getComputedStyle($('duplicateCustomRow')).display==='none');await capture('native-workflow-multiselect.png');$('duplicateConfirm').click();
+  check('Four copies insert at the chosen start with exact per-key Holds',p().draft[0].keys.length===16&&JSON.stringify(p().draft[0].keys.slice(0,4).map(k=>k.sourceId))==='[8,9,10,11]'&&JSON.stringify(p().draft[0].keys.slice(0,4).map(k=>k.ticks))===JSON.stringify(holds)&&JSON.stringify(selected())==='[0,1,2,3]'&&history()===h+1);
+  const duplicated=timeline();$('undo').click();check('Undo restores the entire duplicate operation as one step',timeline()===before);$('redo').click();check('Redo restores every duplicated key',timeline()===duplicated);
+  click(0);click(3,{shiftKey:true});const root=$('keyframes'),first=root.querySelector('[data-index="0"]'),r=first.getBoundingClientRect(),at={x:r.left+r.width*.4,y:r.top+r.height*.5};
+  const pointer=(type,point,target=root)=>target.dispatchEvent(new PointerEvent(type,{bubbles:true,cancelable:true,pointerId:72,isPrimary:true,button:0,buttons:type==='pointerup'?0:1,clientX:point.x,clientY:point.y}));
+  pointer('pointerdown',at,first);pointer('pointermove',{x:at.x+9,y:at.y});const last=root.querySelector('[data-index="15"]');last.scrollIntoView({block:'nearest',inline:'nearest'});const lr=last.getBoundingClientRect(),end={x:lr.right-3,y:lr.top+lr.height/2};pointer('pointermove',end);pointer('pointerup',end);
+  check('Dragging a selected group moves all four keys as one ordered block',JSON.stringify(p().draft[0].keys.slice(-4).map(k=>k.sourceId))==='[8,9,10,11]'&&JSON.stringify(selected())==='[12,13,14,15]');
+  $('undo').click();check('Undo restores the whole group move',timeline()===duplicated);
+  click(0);click(3,{shiftKey:true});$('deleteKey').click();check('Delete removes the complete selection in one edit',p().draft[0].keys.length===12);$('undo').click();check('Undo bulk delete restores all selected key data',timeline()===duplicated);
+  report.framesOnlyDraft=structuredClone(p().draft);
+  let result=await exportFiles('Monstername',{exportSheet:false,exportJSON:false,exportFrames:true,exportDAT:false});
+  check('PNG frame export works before Merge into one folder',result.message.includes('120 files')&&result.message.includes('Monstername_frames'));
+  result=await exportFiles('Monstername',{exportSheet:false,exportJSON:false,exportFrames:true,exportDAT:false});
+  check('Repeating export creates a new folder without overwriting the first',result.message.includes('Monstername_frames_1'));
+  change('exportFrameScope','row');result=await exportFiles('RowMonster',{exportSheet:false,exportJSON:false,exportFrames:true,exportDAT:false});check('Frame export can target only the selected animation',result.message.includes('16 files'));change('exportFrameScope','all');
+  $('export').click();for(const id of ['exportSheet','exportJSON','exportFrames','exportDAT']){$(id).checked=false;$(id).dispatchEvent(new Event('change',{bubbles:true}));}check('No export checkbox selected disables export',$('exportSelected').disabled);$('exportDialog').close();
+  await spriteCheck.openNativeFile('workflow-pack.png',window.__workflowFixture);
+  $('openGrid').click();for(const [id,value] of [['cellWidth','32'],['cellHeight','32'],['offsetX','0'],['offsetY','0'],['gapX','0'],['gapY','0']])$(id).value=value;$('gridForm').requestSubmit();
+  check('Packing fixture contains4Idle+8Walk and retains an empty logical row',p().draft.length===3&&p().draft[0].keys.length===4&&p().draft[1].keys.length===0&&p().draft[2].keys.length===8);
+  click(0);change('holdTicks','3');$('confirm').click();
+  check('Confirm opens Compare before Merge with the confirmed edits',document.getElementById('compareTab').getAttribute('aria-selected')==='true'&&!p().dirty&&!!p().confirmed&&!p().merged);
+  change('scrubber','2','input');check('Compare displays actual Original versus edited Hold differences',$('compareOriginal').toDataURL()!==$('compareMerged').toDataURL());
+  $('merge').click();await wait(()=>p().merged&&!document.body.classList.contains('busy'));const mergedAnimations=JSON.stringify(p().merged.manifest.animations);
+  $('pack').click();const auto=Number($('packColumns').value),n=p().merged.frames.length;check('Pack starts with an area-optimal automatic column count',$('packDialog').open&&auto*Math.ceil(n/auto)===12);
+  $('packConfirm').click();await wait(()=>p().packColumns&&!document.body.classList.contains('busy'));
+  check('Automatic Pack uses12cells and keeps all logical animation metadata',p().merged.manifest.columns*p().merged.manifest.rows===12&&p().merged.manifest.layout==='packed'&&JSON.stringify(p().merged.manifest.animations)===mergedAnimations);
+  $('pack').click();change('packColumns','999','input');check('Pack rejects invalid dimensions before applying',$('packConfirm').disabled);change('packColumns','6','input');$('packConfirm').click();await wait(()=>p().packColumns===6&&!document.body.classList.contains('busy'));
+  check('Manual6-column override fills two rows across Idle/Walk boundary',p().merged.width===192&&p().merged.height===64&&p().merged.manifest.frames[4].sheetRow===0&&p().merged.manifest.frames[4].sheetColumn===4&&p().merged.manifest.animations.length===3&&$('sheetSummary').textContent.includes('6 columns × 2 rows'));
+  for(let i=0;i<5;i++)$('zoomIn').click();await capture('native-workflow-pack.png');
+  report.packedDraft=structuredClone(p().draft);report.packedManifest=structuredClone(p().merged.manifest);
+  result=await exportFiles('PackMonster',{exportSheet:true,exportJSON:true,exportFrames:true,exportDAT:true});
+  check('Export checkbox bundle writes sheet, JSON,12frames and DAT into one folder',result.message.includes('15 files')&&result.message.includes('PackMonster_frames'));
+  document.querySelector('[data-row="2"]').click();change('nearScope','row');$('detect').click();await wait(()=>!document.body.classList.contains('busy'));check('Similarity scope can analyze only the selected animation',p().detection.similar.total===28&&p().detection.similar.found===0);change('nearScope','all');$('detect').click();await wait(()=>!document.body.classList.contains('busy'));
+  const near=p().detection.similar;check('Detect finds the registered near-identical pair without replacing anything',near.pairs.some(pair=>pair.a===0&&pair.b===1)&&p().draft[0].keys[1].sourceId===1);
+  $('reviewSimilar').click();await capture('native-workflow-similar.png');
+  check('Similar review shows source locations and both choices',$('similarDialog').open&&$('nearLeftName').textContent.includes('R1')&&!$('nearKeepLeft').disabled&&!$('nearKeepRight').disabled);
+  const sourcePixels=p().sheet.frames[1].data.slice(),beforeReplace=timeline(),ticks=p().draft.map(a=>a.keys.reduce((n,k)=>n+k.ticks,0));$('nearKeepLeft').click();
+  check('Only explicit use-image choice changes references and invalidates stale Pack',p().draft[0].keys[1].sourceId===0&&p().dirty&&!p().merged&&p().packColumns==null&&p().sheet.frames[1].data.every((v,i)=>v===sourcePixels[i])&&JSON.stringify(p().draft.map(a=>a.keys.reduce((n,k)=>n+k.ticks,0)))===JSON.stringify(ticks));
+  $('undo').click();check('Near-image replacement can be undone exactly',timeline()===beforeReplace);
+  check('New workflow controls keep text at least12px',[...document.querySelectorAll('.workflow *, .batch-tools *')].filter(e=>e.getClientRects().length&&e.textContent.trim()).every(e=>parseFloat(getComputedStyle(e).fontSize)>=12));
+ }catch(error){report.error=String(error.stack??error);}
+ finally{report.done=true;}
+})();

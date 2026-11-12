@@ -1,3 +1,4 @@
+import {KeySelection} from '../timeline-selection.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
@@ -43,10 +44,10 @@ test('Loop and non-loop clocks, including long Compare clocks, resolve the corre
 });
 
 function harness(project=fresh(),mode='edited'){
- const controls=new Map(),cards=Array.from({length:project.sheet.original[0].keys.length},(_,i)=>({dataset:{index:String(i)},selected:i===0,classList:{toggle(name,on){if(name==='selected')cards[i].selected=on;}},closest:()=>true,focus(){state.focused=i;}}));
+ const controls=new Map(),cards=Array.from({length:project.sheet.original[0].keys.length},(_,i)=>({dataset:{index:String(i)},selected:i===0,classList:{remove(){},toggle(name,on){if(name==='selected')cards[i].selected=on;}},closest:()=>true,focus(){state.focused=i;}}));
  const root={querySelectorAll:()=>cards,querySelector:()=>cards.find(k=>k.selected)};
  controls.set('keyframes',root);controls.set('loop',{checked:true});
- const state={project,row:0,selectedKey:0,selectedSource:0,mode,sheetMode:'original',seconds:0,playing:true,selectionAtTime,selectedTimelineIndex,
+ const state={keySelection:new KeySelection(),selectionOwner:null,selectionKeys:null,project,row:0,selectedKey:0,selectedSource:0,mode,sheetMode:'original',seconds:0,playing:true,selectionAtTime,selectedTimelineIndex,
   document:{body:{classList:{contains:()=>false}},activeElement:cards[0]},timelineDrag:{cancel(){}},paintEditor:{setContext(p,id){state.paintSource=id;}},
   renderInspector(){state.inspectorSource=state.selectedSource;},updateFrameTools(){},drawSheet(){state.sheetSource=state.selectedSource;},drawDynamic(){state.previewSource=frameAtSeconds(state.activeAnimation(),state.seconds,true)?.key.sourceId;},revealSelected(){state.revealed=true;},revealTimelineKey(){},
   playbackDuration:()=>ticks(state.activeAnimation())/state.activeAnimation().fps,$:id=>{if(!controls.has(id))controls.set(id,{});return controls.get(id);}};

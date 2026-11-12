@@ -12,8 +12,8 @@ using Microsoft.Web.WebView2.WinForms;
 
 [assembly: System.Reflection.AssemblyTitle("Sprite Check")]
 [assembly: System.Reflection.AssemblyProduct("Sprite Check")]
-[assembly: System.Reflection.AssemblyVersion("1.8.2.0")]
-[assembly: System.Reflection.AssemblyFileVersion("1.8.2.0")]
+[assembly: System.Reflection.AssemblyVersion("1.9.0.0")]
+[assembly: System.Reflection.AssemblyFileVersion("1.9.0.0")]
 
 internal static class Program {
     [STAThread]
@@ -43,7 +43,7 @@ internal sealed class SpriteCheckWindow : Form {
     public SpriteCheckWindow(string[] arguments) {
         args = arguments;
         selfTest = args.Contains("--self-test");
-        Text = "Sprite Check 1.8.2";
+        Text = "Sprite Check 1.9.0";
         BackColor = Color.FromArgb(11, 13, 23);
         StartPosition = FormStartPosition.CenterScreen;
         var available = Screen.PrimaryScreen.WorkingArea;
@@ -81,7 +81,7 @@ internal sealed class SpriteCheckWindow : Form {
             core.Settings.IsZoomControlEnabled = false;
             core.Settings.IsPasswordAutosaveEnabled = false;
             core.Settings.IsGeneralAutofillEnabled = false;
-            await core.AddScriptToExecuteOnDocumentCreatedAsync("window.spriteCheckDesktop = {version:'1.8.2'};");
+            await core.AddScriptToExecuteOnDocumentCreatedAsync("window.spriteCheckDesktop = {version:'1.9.0'};");
             core.NewWindowRequested += (sender, e) => { e.Handled = true; };
             core.PermissionRequested += (sender, e) => { e.State = CoreWebView2PermissionState.Deny; };
             core.NavigationStarting += (sender, e) => {
@@ -158,6 +158,7 @@ internal sealed class SpriteCheckWindow : Form {
             string kind = (string)packet["kind"];
             if (kind == "update-open-release") { Process.Start(new ProcessStartInfo(UpdateService.Releases) { UseShellExecute = true }); return; }
             if (kind == "update-check" || kind == "update-install") { await HandleUpdate(packet, kind); return; }
+            if (kind == "export-bundle") { ExportBundle(packet); return; }
             if (kind != "save-file") return;
             saves.Enqueue(packet);
             if (saving) return;
@@ -209,6 +210,42 @@ internal sealed class SpriteCheckWindow : Form {
             UpdateState(requestId, "error", null, error.Message);
             if (testLog != null) testLog.WriteLine("UPDATE " + error.Message);
         } finally { updating = false; }
+    }
+
+    private void ExportBundle(Dictionary<string,object> packet) {
+        int requestId=Convert.ToInt32(packet["requestId"]);
+        try {
+            string name=(string)packet["name"],b64=(string)packet["base64"];
+            if(!System.Text.RegularExpressions.Regex.IsMatch(name,"^[A-Za-z0-9_][A-Za-z0-9_-]{0,69}$"))throw new IOException("Invalid export folder name.");
+            if(b64.Length>96*1024*1024)throw new IOException("Export exceeds64MiB.");
+            byte[] bytes=Convert.FromBase64String(b64);if(bytes.Length>64*1024*1024)throw new IOException("Export exceeds64MiB.");
+            using(var stream=new MemoryStream(bytes))using(var archive=new System.IO.Compression.ZipArchive(stream,System.IO.Compression.ZipArchiveMode.Read)) {
+                if(archive.Entries.Count<1||archive.Entries.Count>65535)throw new IOException("Invalid export file count.");
+                var names=new HashSet<string>(StringComparer.OrdinalIgnoreCase);long total=0;
+                foreach(var entry in archive.Entries) {
+                    string extension=Path.GetExtension(entry.FullName).ToLowerInvariant();
+                    if(entry.FullName!=entry.Name||!System.Text.RegularExpressions.Regex.IsMatch(entry.Name,"^[A-Za-z0-9_][A-Za-z0-9_.-]{0,179}$")||!names.Add(entry.Name)||(extension!=".png"&&extension!=".json"&&extension!=".dat"))throw new IOException("Invalid export entry name.");
+                    if(System.Text.RegularExpressions.Regex.IsMatch(Path.GetFileNameWithoutExtension(entry.Name),"^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])$",System.Text.RegularExpressions.RegexOptions.IgnoreCase))throw new IOException("Reserved export filename.");
+                    total+=entry.Length;if(total>64*1024*1024)throw new IOException("Export files exceed64MiB.");
+                }
+                string parent;
+                if(selfTest)parent=testDirectory;
+                else using(var dialog=new FolderBrowserDialog()) {
+                    dialog.Description="Select parent folder. Sprite Check creates a new subfolder for all exported files.";
+                    dialog.ShowNewFolderButton=true;
+                    if(dialog.ShowDialog(this)!=DialogResult.OK){web.CoreWebView2.PostWebMessageAsJson(json.Serialize(new{kind="export-result",requestId,message="Export cancelled.",error=false}));return;}
+                    parent=dialog.SelectedPath;
+                }
+                parent=Path.GetFullPath(parent).TrimEnd(Path.DirectorySeparatorChar)+Path.DirectorySeparatorChar;
+                string folder=Path.GetFullPath(Path.Combine(parent,name+"_frames"));int suffix=1;
+                while(Directory.Exists(folder)||File.Exists(folder))folder=Path.GetFullPath(Path.Combine(parent,name+"_frames_"+(suffix++)));
+                if(!folder.StartsWith(parent,StringComparison.OrdinalIgnoreCase))throw new IOException("Invalid export destination.");
+                Directory.CreateDirectory(folder);
+                foreach(var entry in archive.Entries){string destination=Path.GetFullPath(Path.Combine(folder,entry.Name));if(!destination.StartsWith(folder+Path.DirectorySeparatorChar,StringComparison.OrdinalIgnoreCase))throw new IOException("Invalid entry destination.");using(var input=entry.Open())using(var output=new FileStream(destination,FileMode.CreateNew,FileAccess.Write))input.CopyTo(output);}
+                if(testLog!=null)testLog.WriteLine("SAVED FOLDER "+folder+" "+archive.Entries.Count+" files");
+                web.CoreWebView2.PostWebMessageAsJson(json.Serialize(new{kind="export-result",requestId,message="Exported "+archive.Entries.Count+" files to "+folder,error=false}));
+            }
+        }catch(Exception error){if(testLog!=null)testLog.WriteLine("FAIL Export bundle "+error);web.CoreWebView2.PostWebMessageAsJson(json.Serialize(new{kind="export-result",requestId,message="Export failed: "+error.Message,error=true}));}
     }
 
     private void SavePacket(Dictionary<string, object> packet) {
@@ -467,11 +504,30 @@ internal sealed class SpriteCheckWindow : Form {
         await Check("Arrow-selected frame and exact time survive native DAT reopening", "JSON.stringify(spriteCheck.project.draft)===JSON.stringify(__arrowChecks.draft)&&Number(document.getElementById('sourceFrame').value)===__arrowChecks.finalSource&&Number(document.querySelector('#keyframes .selected')?.dataset.index)===__arrowChecks.finalIndex&&Math.abs(spriteCheck.time-__arrowChecks.finalTime)<1e-7");
     }
 
+    private async Task CheckWorkflow() {
+        if(args.Contains("--test-workflow-compact")){ClientSize=new Size(1280,680);await Task.Delay(150);}
+        await OpenFile(Path.Combine(root,"app","assets","test-sheet.png"));
+        await web.CoreWebView2.ExecuteScriptAsync("window.__workflowFixture="+json.Serialize(Convert.ToBase64String(File.ReadAllBytes(Path.Combine(testDirectory,"workflow-pack.png")))));
+        await web.CoreWebView2.ExecuteScriptAsync(File.ReadAllText(Path.Combine(testDirectory,"workflow-native.js")));
+        var captured=new HashSet<string>();
+        for(int n=0;n<1200;n++) {
+            if(await web.CoreWebView2.ExecuteScriptAsync("window.__workflowChecks?.done===true")=="true")break;
+            string raw=await web.CoreWebView2.ExecuteScriptAsync("window.__workflowChecks?.capture??null");
+            if(raw!="null") {string name=json.Deserialize<string>(raw);if(System.Text.RegularExpressions.Regex.IsMatch(name,"^[a-z0-9-]+[.]png$")&&captured.Add(name)){using(var image=File.Create(Path.Combine(testDirectory,name)))await web.CoreWebView2.CapturePreviewAsync(CoreWebView2CapturePreviewImageFormat.Png,image);await web.CoreWebView2.ExecuteScriptAsync("window.__workflowCaptureAck="+json.Serialize(name));}}
+            await Task.Delay(100);
+        }
+        string report=await web.CoreWebView2.ExecuteScriptAsync("window.__workflowChecks");File.WriteAllText(Path.Combine(testDirectory,"workflow-dom-results.json"),report);
+        await Check("Workflow multi-select/Pack/frame-export tests complete without error","window.__workflowChecks?.done===true&&!window.__workflowChecks.error");
+        var values=json.Deserialize<Dictionary<string,object>>(report);foreach(object description in (System.Collections.IEnumerable)values["checks"])testLog.WriteLine("PASS Workflow "+description);
+        await OpenFile(Path.Combine(testDirectory,"PackMonster_frames","PackMonster.dat"));
+        await Check("Packed DAT reopens6columns and preserves3logical animation rows","spriteCheck.project.packColumns===6&&spriteCheck.project.merged.width===192&&spriteCheck.project.merged.height===64&&spriteCheck.project.draft.length===3&&spriteCheck.project.draft[1].keys.length===0&&spriteCheck.project.draft[2].keys.length===8&&spriteCheck.project.draft[0].keys[0].ticks===3");
+    }
+
     private async Task RunSelfTest() {
-        testLog.WriteLine("Sprite Check 1.8.2 native WinForms/WebView2 runtime " + web.CoreWebView2.Environment.BrowserVersionString);
+        testLog.WriteLine("Sprite Check 1.9.0 native WinForms/WebView2 runtime " + web.CoreWebView2.Environment.BrowserVersionString);
         await web.CoreWebView2.ExecuteScriptAsync("document.getElementById('fileMenuButton').click();document.getElementById('menuUpdate').click()");
         for (int n = 0; n < 250 && await web.CoreWebView2.ExecuteScriptAsync("document.getElementById('updateStatus').dataset.state==='checking'") == "true"; n++) await Task.Delay(100);
-        await Check("File Update works in an empty scene with no newer published release", "document.getElementById('updateDialog').open && document.getElementById('updateCurrent').textContent==='1.8.2' && /^[0-9]+[.][0-9]+[.][0-9]+$/.test(document.getElementById('updateLatest').textContent) && document.getElementById('updateStatus').dataset.state==='current' && document.getElementById('updateInstall').hidden && spriteCheck.project===null");
+        await Check("File Update works in an empty scene with no newer published release", "document.getElementById('updateDialog').open && document.getElementById('updateCurrent').textContent==='1.9.0' && /^[0-9]+[.][0-9]+[.][0-9]+$/.test(document.getElementById('updateLatest').textContent) && document.getElementById('updateStatus').dataset.state==='current' && document.getElementById('updateInstall').hidden && spriteCheck.project===null");
         await Check("Native Update dialog text is at least 12px", "[...document.querySelectorAll('#updateDialog *')].filter(e=>e.getClientRects().length&&e.textContent.trim()).every(e=>parseFloat(getComputedStyle(e).fontSize)>=12)");
         using (var updateImage = File.Create(Path.Combine(testDirectory, "native-update-current.png"))) await web.CoreWebView2.CapturePreviewAsync(CoreWebView2CapturePreviewImageFormat.Png, updateImage);
         await web.CoreWebView2.ExecuteScriptAsync("document.getElementById('updateClose').click()");
@@ -569,6 +625,7 @@ internal sealed class SpriteCheckWindow : Form {
         if(args.Contains("--test-8192"))await CheckLargeSheet();
         if(args.Contains("--test-timeline-move"))await CheckTimelineDrag();
         if(args.Contains("--test-arrow-selection"))await CheckArrowSelection();
+        if(args.Contains("--test-workflow"))await CheckWorkflow();
         testLog.WriteLine("PASS ALL native smoke checks");
     }
 }

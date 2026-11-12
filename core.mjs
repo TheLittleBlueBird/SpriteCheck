@@ -1,4 +1,5 @@
 import {assertImageSize,MAX_GRID_CELLS} from './image-limits.mjs';
+import {packMerged} from './packing.mjs';
 export const ROW_NAMES=['Idle FL','Idle BL','Walk FL','Walk BL','Hit FL','Hit BL','Die FL','Die BL','ATK01 FL','ATK01 BL','ATK02 FL','ATK02 BL'];
 export const clone=value=>structuredClone(value);
 export const HISTORY_LIMIT=50;
@@ -21,7 +22,7 @@ export function detectDuplicates(sheet){const buckets=new Map(),groups=[],frameG
 export function ticks(animation){return animation.keys.reduce((sum,key)=>sum+key.ticks,0);}
 export function keyAt(animation,tick){let end=0;for(let i=0;i<animation.keys.length;i++){end+=animation.keys[i].ticks;if(tick<end)return {key:animation.keys[i],index:i,start:end-animation.keys[i].ticks};}return animation.keys.length?{key:animation.keys.at(-1),index:animation.keys.length-1,start:Math.max(0,ticks(animation)-animation.keys.at(-1).ticks)}:null;}
 export function frameAtSeconds(animation,seconds,forceLoop=animation.loop){const total=ticks(animation);if(!total)return null;let tick=Math.max(0,Math.floor(seconds*animation.fps+1e-7));tick=forceLoop?tick%total:Math.min(total-1,tick);return keyAt(animation,tick);}
-export function validateAnimations(sheet,animations){if(animations.length!==sheet.original.length)throw new Error('Animation row count changed.');for(const [r,a] of animations.entries()){if(!Number.isFinite(a.fps)||a.fps<1||a.fps>120)throw new Error('FPS must be 1–120.');if(a.row!==r)throw new Error('Animation rows must retain their order.');for(const k of a.keys){if(!Number.isInteger(k.sourceId)||!sheet.frames[k.sourceId]||sheet.frames[k.sourceId].row!==r)throw new Error('Keys must reference a source frame in their own row.');if(!Number.isInteger(k.ticks)||k.ticks<1||k.ticks>999)throw new Error('Frame duration must be 1–999 ticks.');}}}
+export function validateAnimations(sheet,animations){if(animations.length!==sheet.original.length)throw new Error('Animation row count changed.');if(animations.reduce((n,a)=>n+a.keys.length,0)>65536||animations.some(a=>a.keys.length>16384))throw new Error('Timeline limit: 16,384 keys per row, 65,536 total.');for(const [r,a] of animations.entries()){if(!Number.isFinite(a.fps)||a.fps<1||a.fps>120)throw new Error('FPS must be 1–120.');if(a.row!==r)throw new Error('Animation rows must retain their order.');for(const k of a.keys){if(!Number.isInteger(k.sourceId)||!sheet.frames[k.sourceId]||sheet.frames[k.sourceId].row!==r)throw new Error('Keys must reference a source frame in their own row.');if(!Number.isInteger(k.ticks)||k.ticks<1||k.ticks>999)throw new Error('Frame duration must be 1–999 ticks.');}}}
 export function mergeSheet(sheet,animations,scope='row',base='sprite'){
  validateAnimations(sheet,animations);if(!['row','sheet'].includes(scope))throw new Error('Invalid merge scope.');const detector=detectDuplicates(sheet),frames=[],sourceToFrame=new Map(),uniqueByKey=new Map(),counts=Array(sheet.grid.rows).fill(0);
  for(const animation of animations)for(const key of animation.keys){if(sourceToFrame.has(key.sourceId))continue;const source=sheet.frames[key.sourceId],identity=(scope==='row'?`${source.row}:`:'')+detector.frameGroup.get(source.id);let target=uniqueByKey.get(identity);if(!target){target={id:frames.length,row:source.row,column:counts[source.row]++,sourceId:source.id};frames.push(target);uniqueByKey.set(identity,target);}sourceToFrame.set(source.id,target.id);}
@@ -48,7 +49,7 @@ export class Project{
    // Margins, gaps and cells without an original source cannot be painted.
    if(!equal(this.sheet.image.data,workingImage.data))throw new Error('Working PNG changed pixels outside an original source frame.');
   }
-  this.draft=clone(original);this.confirmed=null;this.merged=null;this.detection=null;this.dirty=false;this.undoStack=[];this.redoStack=[];
+  this.draft=clone(original);this.confirmed=null;this.merged=null;this.packColumns=null;this.detection=null;this.dirty=false;this.undoStack=[];this.redoStack=[];
  }
  get hasPixelEdits(){return this.#editedSourceIds.size>0;}
  #replacePixels(sourceId,data){
@@ -56,7 +57,7 @@ export class Project{
   for(let y=0;y<h;y++)this.sheet.image.data.set(data.subarray(y*w*4,(y+1)*w*4),((frame.y+y)*this.sheet.image.width+frame.x)*4);
   if(equal(data,this.originalSheet.frames[sourceId].data))this.#editedSourceIds.delete(sourceId);else this.#editedSourceIds.add(sourceId);
  }
- #invalidate(clearDetection=false){this.dirty=true;this.merged=null;if(clearDetection)this.detection=null;}
+ #invalidate(clearDetection=false){this.dirty=true;this.merged=null;this.packColumns=null;if(clearDetection)this.detection=null;else if(this.detection)delete this.detection.similar;}
  change(mutator){const next=clone(this.draft);mutator(next);validateAnimations(this.sheet,next);if(JSON.stringify(next)===JSON.stringify(this.draft))return false;remember(this.undoStack,{kind:'timeline',before:clone(this.draft),after:next});this.redoStack=[];this.draft=next;this.#invalidate();return true;}
  paintFrame(sourceId,rgba){
   const frame=Number.isInteger(sourceId)&&this.sheet.frames[sourceId];if(!frame)throw new Error('Choose an existing source frame to paint.');
@@ -68,6 +69,7 @@ export class Project{
  undo(){if(!this.undoStack.length)return false;const transaction=this.undoStack.pop();this.#restore(transaction,'before');remember(this.redoStack,transaction);return true;}
  redo(){if(!this.redoStack.length)return false;const transaction=this.redoStack.pop();this.#restore(transaction,'after');remember(this.undoStack,transaction);return true;}
  detect(){return this.detection=detectDuplicates(this.sheet);}
- confirm(){validateAnimations(this.sheet,this.draft);this.confirmed=clone(this.draft);this.dirty=false;this.merged=null;}
- merge(scope,base){if(!this.confirmed||this.dirty)throw new Error('Confirm your current timeline before merging.');this.merged=mergeSheet(this.sheet,this.confirmed,scope,base);return this.merged;}
+ confirm(){validateAnimations(this.sheet,this.draft);this.confirmed=clone(this.draft);this.dirty=false;this.merged=null;this.packColumns=null;}
+ pack(columns){if(!this.merged||this.dirty)throw new Error('Merge the confirmed timeline before packing.');this.merged=packMerged(this.merged,columns);this.packColumns=columns;return this.merged;}
+ merge(scope,base){if(!this.confirmed||this.dirty)throw new Error('Confirm your current timeline before merging.');this.merged=mergeSheet(this.sheet,this.confirmed,scope,base);this.packColumns=null;return this.merged;}
 }

@@ -1,8 +1,19 @@
-Sprite Check 1.8.2 - Windows x64 portable
+Sprite Check 1.9.0 - Windows x64 portable
 
 1. Extract the complete ZIP to a writable folder.
 2. Open Sprite Check.exe. No Node.js or local server is needed.
-   v1.8.2: Left/Right arrows synchronize sheet, timeline, inspector and preview
+   v1.9.0: Shift-click selects a key range; Ctrl-click toggles individual keys.
+   Duplicate a selection before/after/start/end/custom position, retaining Holds.
+   DUPLICATE TO also chooses a position for one key. Drag/Remove supports groups.
+   Detect reviews exact/near pairs (adjustable50-100%); replacements are explicit.
+   Confirm opens Compare; Merge deduplicates; Pack minimizes occupied cell area
+   automatically or uses manual columns, preserving animation order/timing.
+   Export checkboxes: sheetPNG / JSON / individual keyPNGs / editableDAT.
+   Windows writes all selected files into one new child folder; web downloadsZIP.
+   Frame names: Monstername_Idle_FL_001.png; one PNG per key, Hold stored in JSON.
+   Select all animations or the current row for frame exports. Bundle limit64MiB.
+   Packed DAT layout requires1.9.0 to reopen exactly; original art/timing retained.
+   Left/Right arrows synchronize sheet, timeline, inspector and preview
    selection while stepping one tick. First Frame and scrubber select too.
    Offscreen selected cells/keys are revealed; holds retain the same key until
    the next boundary. Navigation preserves Undo/Redo, pixels and merged results.

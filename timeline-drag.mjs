@@ -43,14 +43,15 @@ export class TimelineDrag{
   const card=e.target.closest('.key'),state=this.getState();
   if(!card||!this.root.contains(card)||!state.enabled||state.keys.length<2)return;
   const from=Number(card.dataset.index);if(!Number.isInteger(from)||from<0||from>=state.keys.length)return;
-  this.gesture={id:e.pointerId,from,keys:state.keys,owner:state.owner,row:state.row,card,startX:e.clientX,startY:e.clientY,x:e.clientX,y:e.clientY,active:false,slot:from,last:0};
+  const indices=state.indices?.includes(from)?[...state.indices]:[from];
+  this.gesture={id:e.pointerId,from,indices,keys:state.keys,owner:state.owner,row:state.row,card,startX:e.clientX,startY:e.clientY,x:e.clientX,y:e.clientY,active:false,slot:from,last:0};
  }
  move(e){
   const g=this.gesture;if(!g||g.id!==e.pointerId)return;
   if(!this.valid()||!(e.buttons&1)){this.cancel();return;}
   g.x=e.clientX;g.y=e.clientY;
   if(!g.active&&Math.hypot(g.x-g.startX,g.y-g.startY)>=5){
-   g.active=true;this.onStart(g.from);g.card.classList.add('key-dragging');this.root.classList.add('timeline-dragging');
+   g.active=true;this.onStart(g.from);g.cards=[...this.root.querySelectorAll('.key')].filter(c=>g.indices.includes(Number(c.dataset.index)));g.cards.forEach(c=>c.classList.add('key-dragging'));this.root.classList.add('timeline-dragging');
    this.marker=this.document.createElement('div');this.marker.className='key-drop-marker';this.marker.setAttribute('aria-hidden','true');this.root.append(this.marker);
    try{this.root.setPointerCapture(g.id);}catch{/* Synthetic/native test events may not own a pointer. */}
    this.frame=this.window.requestAnimationFrame(t=>this.scroll(t));
@@ -65,7 +66,7 @@ export class TimelineDrag{
   const to=keyMoveIndex(g.keys.length,g.from,g.slot),inside=this.inside();
   this.marker.hidden=!inside;
   if(rects.length){const x=g.slot<rects.length?rects[g.slot].left-3:rects.at(-1).right+2;this.marker.style.left=`${x-this.root.getBoundingClientRect().left+this.root.scrollLeft}px`;}
-  this.onHint(inside?`MOVE KEY ${g.from+1} → ${to+1} · ESC CANCEL`:'Release outside to cancel · ESC CANCEL');
+  this.onHint(inside?g.indices.length>1?`MOVE ${g.indices.length} KEYS · ESC CANCEL`:`MOVE KEY ${g.from+1} → ${to+1} · ESC CANCEL`:'Release outside to cancel · ESC CANCEL');
  }
  scroll(time){
   this.frame=null;const g=this.gesture;if(!g?.active)return;
@@ -83,12 +84,12 @@ export class TimelineDrag{
   const active=g.active,valid=active&&this.valid()&&this.inside();
   if(valid)this.preview();const slot=g.slot,from=g.from;
   this.cancel();
-  if(active){this.suppressClick=true;e.preventDefault();if(valid)this.onMove(from,slot);}
+  if(active){this.suppressClick=true;e.preventDefault();if(valid)this.onMove(from,slot,g.indices);}
  }
  cancel(){
   const g=this.gesture;this.gesture=null;
   if(this.frame!=null)this.window.cancelAnimationFrame(this.frame);this.frame=null;
   this.marker?.remove();this.marker=null;this.root.classList.remove('timeline-dragging');
-  if(g){g.card.classList.remove('key-dragging');if(g.active){this.suppressClick=true;this.onHint(null);}try{if(this.root.hasPointerCapture(g.id))this.root.releasePointerCapture(g.id);}catch{}}
+  if(g){g.card.classList.remove('key-dragging');g.cards?.forEach(c=>c.classList.remove('key-dragging'));if(g.active){this.suppressClick=true;this.onHint(null);}try{if(this.root.hasPointerCapture(g.id))this.root.releasePointerCapture(g.id);}catch{}}
  }
 }
